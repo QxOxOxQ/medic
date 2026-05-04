@@ -1,0 +1,74 @@
+{
+  "system_prompt": "base.md",
+  "default_agent": "cardiometabolic_internist",
+  "profiles": [
+    {
+      "name": "orthopedist",
+      "display_name": "Orthopedist",
+      "aliases": ["orthopaedist"],
+      "keywords": [
+        "joint",
+        "knee",
+        "hip",
+        "spine",
+        "fracture",
+        "injury",
+        "rehabilitation",
+        "orthopedic",
+        "acl",
+        "effusion"
+      ],
+      "prompt": "orthopedist.md"
+    },
+    {
+      "name": "neurologist",
+      "display_name": "Neurologist",
+      "aliases": ["neurology"],
+      "keywords": [
+        "neurologic",
+        "neurological",
+        "headache",
+        "migraine",
+        "tremor",
+        "stroke",
+        "sensation",
+        "paresthesia",
+        "seizure"
+      ],
+      "prompt": "neurologist.md"
+    },
+    {
+      "name": "dermatologist",
+      "display_name": "Dermatologist",
+      "aliases": ["dermatology"],
+      "keywords": [
+        "skin",
+        "psoriasis",
+        "rash",
+        "lesion",
+        "erythema",
+        "dermatology",
+        "phototherapy",
+        "biologic"
+      ],
+      "prompt": "dermatologist.md"
+    },
+    {
+      "name": "cardiometabolic_internist",
+      "display_name": "Cardiometabolic internist",
+      "aliases": ["internist", "cardiologist", "cardiometabolic"],
+      "keywords": [
+        "lipid",
+        "cholesterol",
+        "glucose",
+        "blood pressure",
+        "heart",
+        "hypertension",
+        "diabetes",
+        "weight",
+        "metabolic"
+      ],
+      "prompt": "cardiometabolic_internist.md"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+services:
+  app:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - .:/app
+      - app_venv:/app/.venv
+      - ./data:/app/data
+    command: >
+      sh -c "uv sync --locked --all-extras --no-dev &&
+      python -m uvicorn dashboard.app:create_app --factory
+      --host 0.0.0.0 --port 8000 --reload
+      --reload-dir /app/dashboard
+      --reload-dir /app/backend
+      --reload-dir /app/agents
+      --reload-dir /app/clients
+      --reload-dir /app/rag
+      --reload-dir /app/tools"
+
+volumes:
+  app_venv:

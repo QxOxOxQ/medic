@@ -1,0 +1,16 @@
+.aider*
+.agents
+.env*
+.idea
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.git
+benchmark.log
+data
+docs
+sk-*
+tests
+*.pyc

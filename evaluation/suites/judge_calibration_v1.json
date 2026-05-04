@@ -1,0 +1,22 @@
+{
+  "id": "judge-calibration-v1",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "supported-good",
+      "question": "What was the primary endpoint?",
+      "reference_answer": "PASI 75 response at week 16.",
+      "contexts": ["The primary endpoint was PASI 75 response at week 16."],
+      "answer": "The primary endpoint was PASI 75 at week 16.",
+      "expected": "high"
+    },
+    {
+      "id": "unsupported-bad",
+      "question": "What was the primary endpoint?",
+      "reference_answer": "PASI 75 response at week 16.",
+      "contexts": ["The primary endpoint was PASI 75 response at week 16."],
+      "answer": "The primary endpoint was PASI 90 at week 32.",
+      "expected": "low"
+    }
+  ]
+}

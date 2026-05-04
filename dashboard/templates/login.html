@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Medic RAG - login</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body class="login-screen">
+    <main class="login-panel">
+      <h1>Medic RAG</h1>
+      <form method="post" action="/login" class="login-form">
+        <label>
+          Login
+          <input name="username" autocomplete="username" required autofocus>
+        </label>
+        <label>
+          Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        {% if error %}
+          <p class="form-error">{{ error }}</p>
+        {% endif %}
+        <button type="submit">Log in</button>
+      </form>
+    </main>
+  </body>
+</html>

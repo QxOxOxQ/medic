@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Verify source
+        run: make verify
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build runtime image
+        run: |
+          touch .aider-secret-sentinel
+          docker build --tag medic:test .
+
+      - name: Inspect runtime image
+        run: |
+          test "$(docker image inspect medic:test --format '{{.Config.User}}')" = "medic:medic"
+          test "$(docker image inspect medic:test --format '{{.Size}}')" -le 2000000000
+          docker run --rm --entrypoint python medic:test -c \
+            "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('ragas') is None"
+          ! docker run --rm --entrypoint test medic:test -e /app/.aider-secret-sentinel
+          ! docker run --rm --entrypoint test medic:test -e /app/tests
+          ! docker run --rm --entrypoint test medic:test -e /app/evaluation
+
+      - name: Smoke test runtime image
+        run: |
+          docker run --detach --name medic-smoke \
+            --publish 127.0.0.1:18000:8000 \
+            --env OPENROUTER_API_KEY=test-openrouter-key \
+            --env QdrantURL=http://127.0.0.1:6333 \
+            --env QdrantApiKey=test-qdrant-key \
+            --env MEDIC_QDRANT_COLLECTION=test-collection \
+            --env MEDIC_DATABASE_URL=sqlite:////tmp/medic-smoke.db \
+            --env MEDIC_DASHBOARD_USERNAME=admin \
+            --env MEDIC_DASHBOARD_PASSWORD=test-password \
+            --env MEDIC_SESSION_SECRET=test-session-secret \
+            --env MEDIC_DASHBOARD_COOKIE_SECURE=false \
+            medic:test
+          trap 'docker rm --force medic-smoke' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
+              break
+            fi
+            if test "$attempt" -eq 30; then
+              docker logs medic-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18000/login)" = "200"
