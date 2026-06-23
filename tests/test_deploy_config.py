@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from rag.config import SETTINGS
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -19,9 +22,11 @@ def test_production_compose_uses_published_image_without_demo_seed() -> None:
 
 def test_production_compose_requires_database_secrets() -> None:
     compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    database_url_env = SETTINGS["env"]["database_url"]
 
     assert (
-        'MEDIC_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-medic}:'
+        database_url_env
+        + ': "postgresql+psycopg://${POSTGRES_USER:-medic}:'
         "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
         '@postgres:5432/${POSTGRES_DB:-medic}"'
     ) in compose
@@ -34,6 +39,7 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
     ).read_text(encoding="utf-8")
+    qdrant_url_env = SETTINGS["env"]["qdrant_url"]
 
     assert "pull_request:" in workflow
     assert "push:" in workflow
@@ -58,7 +64,7 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
     assert "install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml" in workflow
     assert "cat > /opt/medic/.env <<EOF" in workflow
     assert "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" in workflow
-    assert "QdrantURL=${QDRANT_URL}" in workflow
+    assert f"{qdrant_url_env}=${{QDRANT_URL}}" in workflow
     assert "chmod 600 /opt/medic/.env" in workflow
     assert "test -f .env" in workflow
     assert "ssh " not in workflow
