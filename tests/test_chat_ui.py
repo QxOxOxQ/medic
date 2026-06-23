@@ -220,6 +220,7 @@ def _node_test_script() -> str:
           assert.match(answerHtml, /cardiometabolic internist/);
           assert.match(answerHtml, /LDL is elevated/);
           assert.match(answerHtml, /data-source-id="S1"/);
+          assert.match(answerHtml, /data-source-record-id="source-record-1"/);
           assert.match(answerHtml, /Answer trace/);
           assert.match(elements.chatSources.innerHTML, /Sources/);
           assert.match(elements.chatSources.innerHTML, /1 fragment/);
@@ -237,7 +238,13 @@ def _node_test_script() -> str:
             target: {
               closest(selector) {
                 assert.equal(selector, "[data-source-id]");
-                return { dataset: { sourceId: "S1" }, textContent: "[S1]" };
+                return {
+                  dataset: {
+                    sourceId: "S1",
+                    sourceRecordId: "source-record-1",
+                  },
+                  textContent: "[S1]",
+                };
               },
             },
           });
@@ -324,6 +331,7 @@ def _node_test_script() -> str:
 
         function sourcePayload() {
           return {
+            id: "source-record-1",
             source_id: "S1",
             source: "report.md",
             content_hash: "1234567890abcdefXYZ",
@@ -332,6 +340,13 @@ def _node_test_script() -> str:
             document_name: "report.md",
             relative_raw_path: "raw/report.pdf",
             retrieval_query: "LDL",
+          };
+        }
+
+        function sourcePayloadWith(overrides) {
+          return {
+            ...sourcePayload(),
+            ...overrides,
           };
         }
 
@@ -388,10 +403,194 @@ def _node_test_script() -> str:
           assert.match(elements.chatSources.innerHTML, /1 fragment/);
         }
 
+        async function repeatedCitationIdsOpenClickedMessageSource() {
+          const { context, elements } = createHarness({
+            question: "",
+            apiJson: async () => ({
+              conversation: {
+                id: "conversation-1",
+                title: "Repeated source ids",
+                messages: [
+                  {
+                    id: "user-1",
+                    role: "user",
+                    content: "First question",
+                    insufficient_context: false,
+                    sources: [],
+                    trace_events: [],
+                  },
+                  {
+                    id: "assistant-1",
+                    role: "assistant",
+                    content: "First answer [S2].",
+                    insufficient_context: false,
+                    sources: [
+                      sourcePayloadWith({
+                        id: "old-s2-record",
+                        source_id: "S2",
+                        document_name: "old-document.pdf",
+                        relative_raw_path: "raw/old-document.pdf",
+                        excerpt: "Old document excerpt.",
+                      }),
+                    ],
+                    trace_events: [],
+                  },
+                  {
+                    id: "user-2",
+                    role: "user",
+                    content: "Second question",
+                    insufficient_context: false,
+                    sources: [],
+                    trace_events: [],
+                  },
+                  {
+                    id: "assistant-2",
+                    role: "assistant",
+                    content: "Second answer [S2].",
+                    insufficient_context: false,
+                    sources: [
+                      sourcePayloadWith({
+                        id: "new-s2-record",
+                        source_id: "S2",
+                        document_name: "new-document.pdf",
+                        relative_raw_path: "raw/new-document.pdf",
+                        excerpt: "New document excerpt.",
+                      }),
+                    ],
+                    trace_events: [],
+                  },
+                ],
+              },
+            }),
+          });
+          loadChat(context);
+
+          await context.window.MedicDashboard.chat.loadConversation("conversation-1");
+
+          const latestAnswerHtml = elements.chatHistory.children[3].innerHTML;
+          assert.match(latestAnswerHtml, /data-source-id="S2"/);
+          assert.match(latestAnswerHtml, /data-source-record-id="new-s2-record"/);
+
+          elements.chatHistory.dispatchEvent("click", {
+            preventDefault() {},
+            target: {
+              closest(selector) {
+                assert.equal(selector, "[data-source-id]");
+                return {
+                  dataset: {
+                    sourceId: "S2",
+                    sourceRecordId: "new-s2-record",
+                  },
+                  textContent: "[S2]",
+                };
+              },
+            },
+          });
+
+          assert.equal(elements.sourceDrawerTitle.textContent, "S2");
+          assert.match(elements.sourceDrawerBody.innerHTML, /new-document\.pdf/);
+          assert.match(elements.sourceDrawerBody.innerHTML, /New document excerpt\./);
+          assert.doesNotMatch(elements.sourceDrawerBody.innerHTML, /Old document excerpt\./);
+        }
+
+        async function fiveCitationsOpenMatchingDocuments() {
+          const sourceIds = ["S1", "S2", "S3", "S4", "S5"];
+          const sourcesFor = (version) => sourceIds.map((sourceId, index) =>
+            sourcePayloadWith({
+              id: `${version}-${sourceId.toLowerCase()}-record`,
+              source_id: sourceId,
+              document_name: `${version}-document-${index + 1}.pdf`,
+              relative_raw_path: `raw/${version}-document-${index + 1}.pdf`,
+              excerpt: `${version} document ${index + 1} excerpt.`,
+            }),
+          );
+          const { context, elements } = createHarness({
+            question: "",
+            apiJson: async () => ({
+              conversation: {
+                id: "conversation-1",
+                title: "Five cited documents",
+                messages: [
+                  {
+                    id: "user-1",
+                    role: "user",
+                    content: "First question",
+                    insufficient_context: false,
+                    sources: [],
+                    trace_events: [],
+                  },
+                  {
+                    id: "assistant-1",
+                    role: "assistant",
+                    content: "First answer [S1] [S2] [S3] [S4] [S5].",
+                    insufficient_context: false,
+                    sources: sourcesFor("old"),
+                    trace_events: [],
+                  },
+                  {
+                    id: "user-2",
+                    role: "user",
+                    content: "Second question",
+                    insufficient_context: false,
+                    sources: [],
+                    trace_events: [],
+                  },
+                  {
+                    id: "assistant-2",
+                    role: "assistant",
+                    content: "Second answer [S1] [S2] [S3] [S4] [S5].",
+                    insufficient_context: false,
+                    sources: sourcesFor("new"),
+                    trace_events: [],
+                  },
+                ],
+              },
+            }),
+          });
+          loadChat(context);
+
+          await context.window.MedicDashboard.chat.loadConversation("conversation-1");
+
+          const latestAnswerHtml = elements.chatHistory.children[3].innerHTML;
+          for (const [index, sourceId] of sourceIds.entries()) {
+            const sourceRecordId = `new-${sourceId.toLowerCase()}-record`;
+            assert.match(
+              latestAnswerHtml,
+              new RegExp(`data-source-id="${sourceId}"[^>]+data-source-record-id="${sourceRecordId}"`),
+            );
+
+            elements.chatHistory.dispatchEvent("click", {
+              preventDefault() {},
+              target: {
+                closest(selector) {
+                  assert.equal(selector, "[data-source-id]");
+                  return {
+                    dataset: { sourceId, sourceRecordId },
+                    textContent: `[${sourceId}]`,
+                  };
+                },
+              },
+            });
+
+            assert.equal(elements.sourceDrawerTitle.textContent, sourceId);
+            assert.match(
+              elements.sourceDrawerBody.innerHTML,
+              new RegExp(`new-document-${index + 1}\\.pdf`),
+            );
+            assert.match(
+              elements.sourceDrawerBody.innerHTML,
+              new RegExp(`new document ${index + 1} excerpt\\.`),
+            );
+            assert.doesNotMatch(elements.sourceDrawerBody.innerHTML, /old document/);
+          }
+        }
+
         await successfulSubmitRendersAnswerAndSources();
         await insufficientContextRendersWarningAndNoSources();
         await rejectionRendersErrorAndReenablesControls();
         await emptyQuestionDoesNotCallApi();
         await englishOnlyRendersDynamicLabels();
+        await repeatedCitationIdsOpenClickedMessageSource();
+        await fiveCitationsOpenMatchingDocuments();
         """
     )

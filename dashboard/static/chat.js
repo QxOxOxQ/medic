@@ -7,6 +7,7 @@ window.MedicDashboard.chat = (() => {
     currentConversation: null,
     currentConversationId: null,
     currentSourceId: null,
+    currentSourceRecordId: null,
     currentStateKey: "chat.ready",
     currentStateParams: {},
     handlersAttached: false,
@@ -132,6 +133,7 @@ window.MedicDashboard.chat = (() => {
   function renderConversation(conversation, { preserveSource = false } = {}) {
     const { elements } = window.MedicDashboard;
     const sourceId = preserveSource ? state.currentSourceId : null;
+    const sourceRecordId = preserveSource ? state.currentSourceRecordId : null;
     state.currentConversation = conversation || null;
     state.currentConversationId = conversation?.id || null;
     elements.chatHistory.innerHTML = "";
@@ -148,7 +150,7 @@ window.MedicDashboard.chat = (() => {
     renderSources(lastAssistantSources(messages));
     renderConversationListSelection();
     if (sourceId) {
-      openSourceDrawer(sourceId);
+      openSourceDrawer(sourceId, sourceRecordId);
     }
   }
 
@@ -270,13 +272,15 @@ window.MedicDashboard.chat = (() => {
   }
 
   function linkifyCitations(text, sources) {
-    const sourceIds = new Set(sources.map(sourceKey));
     const escaped = formatting.escapeHtml(text);
     return escaped.replace(/\[(S\d+)\]/g, (match, sourceId) => {
-      if (!sourceIds.has(sourceId)) {
+      const source = findSourceInList(sourceId, sources);
+      if (!source) {
         return match;
       }
-      return `<button class="citation-button" type="button" data-source-id="${sourceId}">[${sourceId}]</button>`;
+      const escapedSourceId = formatting.escapeHtml(sourceId);
+      const escapedRecordId = formatting.escapeHtml(sourceRecordKey(source));
+      return `<button class="citation-button" type="button" data-source-id="${escapedSourceId}" data-source-record-id="${escapedRecordId}">[${escapedSourceId}]</button>`;
     });
   }
 
@@ -303,7 +307,12 @@ window.MedicDashboard.chat = (() => {
     return `
       <article class="source-row">
         <div class="source-meta">
-          <button class="source-open" type="button" data-source-id="${formatting.escapeHtml(id)}">${formatting.escapeHtml(id || "-")}</button>
+          <button
+            class="source-open"
+            type="button"
+            data-source-id="${formatting.escapeHtml(id)}"
+            data-source-record-id="${formatting.escapeHtml(sourceRecordKey(source))}"
+          >${formatting.escapeHtml(id || "-")}</button>
           <span>${formatting.escapeHtml(source.document_name || source.source || i18n.t("chat.unknownSource"))}</span>
           <span>${scoreLabel(source.score)}</span>
           <code>${formatting.escapeHtml(formatting.shortHash(source.content_hash))}</code>
@@ -332,15 +341,17 @@ window.MedicDashboard.chat = (() => {
     return "chat.ready";
   }
 
-  function openSourceDrawer(sourceId) {
+  function openSourceDrawer(sourceId, sourceRecordId = "") {
     const normalizedSourceId = normalizeSourceId(sourceId);
-    const source = findSource(normalizedSourceId);
+    const normalizedSourceRecordId = normalizeSourceRecordId(sourceRecordId);
+    const source = findSource(normalizedSourceId, normalizedSourceRecordId);
     if (!source) {
       setState("chat.sourceNotFound");
       return;
     }
     const { elements } = window.MedicDashboard;
     state.currentSourceId = sourceKey(source);
+    state.currentSourceRecordId = sourceRecordKey(source);
     elements.sourceDrawer.hidden = false;
     elements.sourceDrawerTitle.textContent = sourceKey(source);
     elements.sourceDrawerBody.innerHTML = `
@@ -372,6 +383,7 @@ window.MedicDashboard.chat = (() => {
   function closeSourceDrawer() {
     const { elements } = window.MedicDashboard;
     state.currentSourceId = null;
+    state.currentSourceRecordId = null;
     elements.sourceDrawer.hidden = true;
     elements.sourceDrawerBody.innerHTML = "";
   }
@@ -402,11 +414,18 @@ window.MedicDashboard.chat = (() => {
     }
   }
 
-  function findSource(sourceId) {
+  function findSource(sourceId, sourceRecordId = "") {
+    if (sourceRecordId) {
+      return findSourceByRecordId(sourceRecordId);
+    }
+    return findSourceByDisplayId(sourceId);
+  }
+
+  function findSourceByRecordId(sourceRecordId) {
     const messages = state.currentConversation?.messages || [];
     for (const message of messages) {
       for (const source of message.sources || []) {
-        if (normalizeSourceId(sourceKey(source)) === sourceId) {
+        if (normalizeSourceRecordId(sourceRecordKey(source)) === sourceRecordId) {
           return source;
         }
       }
@@ -414,12 +433,38 @@ window.MedicDashboard.chat = (() => {
     return null;
   }
 
+  function findSourceByDisplayId(sourceId) {
+    const messages = state.currentConversation?.messages || [];
+    for (const message of messages) {
+      const source = findSourceInList(sourceId, message.sources || []);
+      if (source) {
+        return source;
+      }
+    }
+    return null;
+  }
+
+  function findSourceInList(sourceId, sources) {
+    const normalizedSourceId = normalizeSourceId(sourceId);
+    return sources.find(
+      (source) => normalizeSourceId(sourceKey(source)) === normalizedSourceId,
+    ) || null;
+  }
+
   function sourceKey(source) {
     return String(source?.source_id || source?.id || "");
   }
 
+  function sourceRecordKey(source) {
+    return String(source?.id || "");
+  }
+
   function normalizeSourceId(sourceId) {
     return String(sourceId || "").trim().replace(/^\[/, "").replace(/\]$/, "");
+  }
+
+  function normalizeSourceRecordId(sourceRecordId) {
+    return String(sourceRecordId || "").trim();
   }
 
   function appendError(message) {
@@ -516,7 +561,10 @@ window.MedicDashboard.chat = (() => {
         return;
       }
       event.preventDefault();
-      openSourceDrawer(button.dataset.sourceId || button.textContent);
+      openSourceDrawer(
+        button.dataset.sourceId || button.textContent,
+        button.dataset.sourceRecordId || "",
+      );
     });
     elements.chatSources.addEventListener("click", (event) => {
       const button = event.target.closest("[data-source-id]");
@@ -524,7 +572,10 @@ window.MedicDashboard.chat = (() => {
         return;
       }
       event.preventDefault();
-      openSourceDrawer(button.dataset.sourceId || button.textContent);
+      openSourceDrawer(
+        button.dataset.sourceId || button.textContent,
+        button.dataset.sourceRecordId || "",
+      );
     });
     elements.sourceDrawerBody.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-jump-source]");
