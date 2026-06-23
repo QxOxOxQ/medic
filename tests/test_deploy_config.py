@@ -1,0 +1,69 @@
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_production_compose_uses_published_image_without_demo_seed() -> None:
+    compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert 'image: "${MEDIC_IMAGE:?MEDIC_IMAGE is required}"' in compose
+    assert "build:" not in compose
+    assert "POSTGRES_PASSWORD is required" in compose
+    assert "postgresql+psycopg://" in compose
+    assert "python main.py setup --no-create-env" in compose
+    assert "seed-demo" not in compose
+    assert '"127.0.0.1:8000:8000"' in compose
+    assert "postgres_data:/var/lib/postgresql" in compose
+    assert "demo_data:/app/data" in compose
+
+
+def test_production_compose_requires_database_secrets() -> None:
+    compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert (
+        'MEDIC_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-medic}:'
+        "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+        '@postgres:5432/${POSTGRES_DB:-medic}"'
+    ) in compose
+    assert 'POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"' in compose
+    assert "postgresql+psycopg://medic:medic@postgres:5432/medic" not in compose
+    assert "POSTGRES_PASSWORD: medic" not in compose
+
+
+def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
+    workflow = (
+        PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "pull_request:" in workflow
+    assert "push:" in workflow
+    assert "pull_request_target" not in workflow
+    assert "ghcr.io" in workflow
+    assert "IMAGE_NAME: qxoxoxq/medic" in workflow
+    assert "make verify" in workflow
+    assert (
+        "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
+        "&& github.ref == 'refs/heads/main'"
+    ) in workflow
+    assert (
+        "needs.verify.result == 'success' && "
+        "(needs.evaluation.result == 'success' || needs.evaluation.result == 'skipped')"
+    ) in workflow
+    assert "evaluation-bootstrap-dataset --suite medical-demo-v1" in workflow
+    assert "evaluation-calibrate" in workflow
+    assert "evaluate --suite medical-demo-v1" in workflow
+    assert "docker push \"${IMAGE_SHA}\"" in workflow
+    assert "docker push \"${IMAGE_LATEST}\"" in workflow
+    assert "runs-on: [self-hosted, Linux, X64]" in workflow
+    assert "install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml" in workflow
+    assert "cat > /opt/medic/.env <<EOF" in workflow
+    assert "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" in workflow
+    assert "QdrantURL=${QDRANT_URL}" in workflow
+    assert "chmod 600 /opt/medic/.env" in workflow
+    assert "test -f .env" in workflow
+    assert "ssh " not in workflow
+    assert "scp " not in workflow
+    assert "docker login \"${REGISTRY}\"" in workflow
+    assert "docker compose -f docker-compose.prod.yml pull" in workflow
+    assert "docker compose -f docker-compose.prod.yml up -d" in workflow
+    assert "curl -fsS http://127.0.0.1:8000/healthz" in workflow

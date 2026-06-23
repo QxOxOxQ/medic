@@ -1,0 +1,229 @@
+name: Deploy OCI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-oci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: qxoxoxq/medic
+  MEDIC_DATABASE_URL: sqlite:////tmp/medic-evaluation.db
+  MEDIC_QDRANT_COLLECTION: hybrid_medic_ci_guard
+  MEDIC_EVAL_QDRANT_PREFIX: medic_eval_ci
+  MEDIC_EVAL_JUDGE_MODEL: openai/gpt-4.1-mini
+  MEDIC_EVAL_EMBEDDING_MODEL: openai/text-embedding-3-small
+  MEDIC_DASHBOARD_USERNAME: eval
+  MEDIC_DASHBOARD_PASSWORD: eval-ci-password
+  MEDIC_SESSION_SECRET: eval-ci-session-secret
+  MEDIC_DASHBOARD_COOKIE_SECURE: "false"
+  MEDIC_LANGFUSE_TRACING_ENABLED: "false"
+  MEDIC_LANGFUSE_CAPTURE_CONTENT: "false"
+  MEDIC_LANGFUSE_ENVIRONMENT: evaluation-ci
+  LANGFUSE_TRACING_ENVIRONMENT: evaluation-ci
+
+jobs:
+  verify:
+    name: Verify source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Verify source
+        run: make verify
+
+  evaluation:
+    name: Live RAG evaluation
+    runs-on: ubuntu-latest
+    needs:
+      - verify
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      QdrantURL: ${{ secrets.QDRANT_URL }}
+      QdrantApiKey: ${{ secrets.QDRANT_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Prepare evaluation database
+        run: uv run python main.py setup --skip-qdrant --no-create-env
+
+      - name: Bootstrap Langfuse dataset
+        run: uv run python main.py evaluation-bootstrap-dataset --suite medical-demo-v1
+
+      - name: Calibrate RAGAS judge
+        run: uv run python main.py evaluation-calibrate
+
+      - name: Run quality gate
+        run: uv run python main.py evaluate --suite medical-demo-v1
+
+  image:
+    name: Build runtime image
+    runs-on: ubuntu-latest
+    needs:
+      - verify
+      - evaluation
+    if: always() && needs.verify.result == 'success' && (needs.evaluation.result == 'success' || needs.evaluation.result == 'skipped')
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build runtime image
+        id: metadata
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
+          echo "image=${IMAGE_SHA}" >> "${GITHUB_OUTPUT}"
+          touch .aider-secret-sentinel
+          docker build --tag "${IMAGE_SHA}" --tag "${IMAGE_LATEST}" .
+
+      - name: Inspect runtime image
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          test "$(docker image inspect "${IMAGE_SHA}" --format '{{.Config.User}}')" = "medic:medic"
+          test "$(docker image inspect "${IMAGE_SHA}" --format '{{.Size}}')" -le 2000000000
+          docker run --rm --entrypoint python "${IMAGE_SHA}" -c \
+            "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('ragas') is None"
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/.aider-secret-sentinel
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/tests
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/evaluation
+
+      - name: Smoke test runtime image
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          docker run --detach --name medic-smoke \
+            --publish 127.0.0.1:18000:8000 \
+            --env OPENROUTER_API_KEY=test-openrouter-key \
+            --env QdrantURL=http://127.0.0.1:6333 \
+            --env QdrantApiKey=test-qdrant-key \
+            --env MEDIC_QDRANT_COLLECTION=test-collection \
+            --env MEDIC_DATABASE_URL=sqlite:////tmp/medic-smoke.db \
+            --env MEDIC_DASHBOARD_USERNAME=admin \
+            --env MEDIC_DASHBOARD_PASSWORD=test-password \
+            --env MEDIC_SESSION_SECRET=test-session-secret \
+            --env MEDIC_DASHBOARD_COOKIE_SECURE=false \
+            "${IMAGE_SHA}"
+          trap 'docker rm --force medic-smoke' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
+              break
+            fi
+            if test "${attempt}" -eq 30; then
+              docker logs medic-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18000/login)" = "200"
+
+      - name: Push runtime image
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          docker push "${IMAGE_SHA}"
+          docker push "${IMAGE_LATEST}"
+
+  deploy:
+    name: Deploy to OCI
+    runs-on: [self-hosted, Linux, X64]
+    needs:
+      - image
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    environment: production
+    env:
+      DEPLOY_IMAGE: ${{ needs.image.outputs.image }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      QDRANT_URL: ${{ secrets.QDRANT_URL }}
+      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      MEDIC_DASHBOARD_USERNAME: ${{ secrets.MEDIC_DASHBOARD_USERNAME }}
+      MEDIC_DASHBOARD_PASSWORD: ${{ secrets.MEDIC_DASHBOARD_PASSWORD }}
+      MEDIC_SESSION_SECRET: ${{ secrets.MEDIC_SESSION_SECRET }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install production Compose file
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/medic
+          sudo chown "$(id -u):$(id -g)" /opt/medic
+          install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
+          cat > /opt/medic/.env <<EOF
+          POSTGRES_DB=medic
+          POSTGRES_USER=medic
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+          QdrantURL=${QDRANT_URL}
+          QdrantApiKey=${QDRANT_API_KEY}
+          MEDIC_QDRANT_COLLECTION=hybrid_medic_oci_documents
+          MEDIC_DASHBOARD_USERNAME=${MEDIC_DASHBOARD_USERNAME}
+          MEDIC_DASHBOARD_PASSWORD=${MEDIC_DASHBOARD_PASSWORD}
+          MEDIC_SESSION_SECRET=${MEDIC_SESSION_SECRET}
+          MEDIC_DASHBOARD_COOKIE_SECURE=false
+          MEDIC_LANGFUSE_TRACING_ENABLED=false
+          MEDIC_LANGFUSE_CAPTURE_CONTENT=false
+          MEDIC_LANGFUSE_ENVIRONMENT=production
+          EOF
+          chmod 600 /opt/medic/.env
+
+      - name: Deploy image
+        run: |
+          set -euo pipefail
+          cd /opt/medic
+          test -f .env
+          export MEDIC_IMAGE="${DEPLOY_IMAGE}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d
+          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          docker compose -f docker-compose.prod.yml ps
