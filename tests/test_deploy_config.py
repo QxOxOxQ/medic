@@ -51,6 +51,7 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
         "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
         "&& github.ref == 'refs/heads/main'"
     ) in workflow
+    assert "vars.MEDIC_RUN_LIVE_EVALUATION == 'true'" in workflow
     assert (
         "needs.verify.result == 'success' && "
         "(needs.evaluation.result == 'success' || needs.evaluation.result == 'skipped')"
