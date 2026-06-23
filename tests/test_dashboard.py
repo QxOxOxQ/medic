@@ -22,6 +22,7 @@ from dashboard.documents import qdrant_index_preview_for_content_hash
 from dashboard.jobs import JobStore
 from rag.config import DocumentPreparationSettings
 from rag.database import DocumentRepository, UserRepository
+from rag.database.chat_store import SqlAlchemyChatConversationStore
 from rag.database.migrations import upgrade_database
 from rag.database.session import create_database_engine
 from rag.document_preparation import calculate_text_sha256, prepare_documents
@@ -64,7 +65,7 @@ def _client(
     )
     chat_use_case = ChatConversationUseCase(
         agent_runner_factory=lambda **_: _AgentRunnerStub(),
-        database_session_factory=session_factory,
+        conversation_store=SqlAlchemyChatConversationStore(session_factory),
     )
     app = create_app(
         auth_settings=AuthSettings(

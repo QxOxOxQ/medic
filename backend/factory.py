@@ -12,6 +12,7 @@ from backend.use_cases import AgentRunnerFactory, AnswerQuestionUseCase
 from clients.chat_models import ChatModelFactory, get_chat_model_settings
 from rag.retrieval import RetrievalService
 from observability import build_agent_observability
+from rag.database.chat_store import SqlAlchemyChatConversationStore
 from tools import RagSearchTool, SourceLedger
 
 
@@ -40,7 +41,7 @@ def build_chat_conversation_use_case(
             database_session_factory=database_session_factory,
             observability=observability,
         ),
-        database_session_factory=database_session_factory,
+        conversation_store=SqlAlchemyChatConversationStore(database_session_factory),
     )
 
 

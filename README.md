@@ -22,7 +22,7 @@ cp .env.example .env
 docker-compose up --build
 ```
 
-Before starting, set your own `OPENROUTER_API_KEY`, remote `QdrantURL`, `QdrantApiKey`, and dashboard credentials in `.env`. Docker Compose builds the application image, starts local PostgreSQL, runs Alembic migrations, seeds the admin user, loads synthetic demo documents, and checks or creates the demo collection in remote Qdrant. Compose does not start local Qdrant and does not mount the local `data/` directory in demo mode.
+Before starting, set your own `OPENROUTER_API_KEY`, remote `QdrantURL`, `QdrantApiKey`, and dashboard credentials in `.env`. Docker Compose builds the application image, starts local PostgreSQL, runs Alembic migrations, seeds the admin user, and checks or creates the configured collection in remote Qdrant. Compose does not start local Qdrant and does not mount the local `data/` directory in demo mode.
 
 The dashboard is available at:
 
@@ -111,6 +111,27 @@ Never reuse credentials that appeared in a local assistant history or an older
 image. Revoke them at the provider and supply newly generated values through the
 runtime environment.
 
+## Production Compose
+
+`docker-compose.prod.yml` is the OCI runner deployment file used by the GitHub
+Actions workflow. Keep `/opt/medic/.env` on the host and set at least:
+
+```env
+MEDIC_IMAGE=ghcr.io/qxoxoxq/medic:sha-...
+POSTGRES_PASSWORD=replace-with-a-long-random-password
+MEDIC_DATABASE_URL=postgresql+psycopg://medic:replace-with-a-long-random-password@postgres:5432/medic
+OPENROUTER_API_KEY=...
+QdrantURL=https://your-qdrant-cluster-url
+QdrantApiKey=...
+MEDIC_DASHBOARD_USERNAME=admin
+MEDIC_DASHBOARD_PASSWORD=replace-with-a-long-random-password
+MEDIC_SESSION_SECRET=replace-with-a-long-random-secret
+MEDIC_DASHBOARD_COOKIE_SECURE=true
+```
+
+If the PostgreSQL password contains URL-reserved characters, percent-encode it
+inside `MEDIC_DATABASE_URL`.
+
 ### Langfuse application tracing
 
 Set valid `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and
@@ -158,7 +179,7 @@ MEDIC_DASHBOARD_USERNAME
 MEDIC_DASHBOARD_PASSWORD
 ```
 
-Login is verified in PostgreSQL. `main.py setup` creates the admin user from those variables when it does not already exist. `main.py seed-demo` loads synthetic demo PDFs into the admin account; Compose runs both commands automatically before starting the dashboard.
+Login is verified in PostgreSQL. `main.py setup` creates the admin user from those variables when it does not already exist. Compose runs setup automatically before starting the dashboard, but it does not load synthetic demo documents.
 
 The dashboard is English-only. There is no language selector and agent answers are requested in English.
 
@@ -205,18 +226,18 @@ If Qdrant is unavailable, the dashboard still shows local documents and clearly 
 
 ## Demo Documents
 
-`demo_documents/` contains three synthetic PDFs loaded by the demo seed:
+`demo_documents/` contains three synthetic PDFs that can be uploaded manually:
 
 - `synthetic_acl_rehab_demo.pdf`
 - `synthetic_psoriasis_treatment_demo.pdf`
 - `synthetic_glp1_remote_monitoring_demo.pdf`
 
-After the first Compose start, log in, click `Run pipeline`, then ask a question in the `Medical agent` panel.
+After the first Compose start, log in and add your own PDFs. To rehearse the synthetic demo path, upload the three PDFs below, click `Run pipeline`, then ask a question in the `Medical agent` panel.
 
 Suggested 5-minute demo path:
 
 1. Log in with the account from `.env`.
-2. Show the three synthetic documents in the `Documents` table.
+2. Upload the three synthetic documents and show them in the `Documents` table.
 3. Run `Run pipeline` and wait for the final status.
 4. Ask these questions:
    - `What are the progression criteria after ACL reconstruction?`
@@ -224,13 +245,7 @@ Suggested 5-minute demo path:
    - `What changed with remote monitoring in the GLP-1 study?`
 5. Show the agent answer, selected specialist, `[S1]` citations, source list, and source excerpt preview.
 
-Manual demo data loading outside Compose:
-
-```bash
-uv run python main.py seed-demo
-```
-
-`demo_documents/failure_cases/EXPECTED_PARSE_FAILURE_invalid_pdf.pdf` is intentionally broken and only supports testing the `failed` status with a readable `processing_error`. It is not loaded into the main demo path.
+`demo_documents/failure_cases/EXPECTED_PARSE_FAILURE_invalid_pdf.pdf` is intentionally broken and only supports testing the `failed` status with a readable `processing_error`. It is not part of the main demo path.
 
 ## CLI Commands
 
@@ -250,12 +265,6 @@ Full preparation and indexing:
 
 ```bash
 uv run python main.py ingest
-```
-
-Seed synthetic demo documents:
-
-```bash
-uv run python main.py seed-demo
 ```
 
 Run the full evaluation suite synchronously:

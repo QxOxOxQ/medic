@@ -49,6 +49,7 @@ def test_dockerfile_builds_a_minimal_non_root_runtime_image() -> None:
     assert "HEALTHCHECK" in dockerfile
     assert "/healthz" in dockerfile
     assert "COPY --chown=medic:medic evaluation" not in dockerfile
+    assert "COPY --chown=medic:medic demo_documents" not in dockerfile
 
 
 def test_dockerignore_excludes_local_and_secret_material() -> None:
@@ -105,7 +106,7 @@ def test_docker_compose_configures_app_with_local_postgres_and_remote_qdrant(
     assert "source: demo_data" in result.stdout
     assert "target: /app/data" in result.stdout
     assert "python main.py setup --no-create-env" in result.stdout
-    assert "python main.py seed-demo" in result.stdout
+    assert "python main.py seed-demo" not in result.stdout
     assert "python main.py dashboard --host 0.0.0.0 --port 8000" in result.stdout
     assert "http://127.0.0.1:8000/healthz" in result.stdout
     assert "restart: unless-stopped" in result.stdout

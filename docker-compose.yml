@@ -47,8 +47,7 @@ services:
     volumes:
       - demo_data:/app/data
     command: >
-      sh -c "python main.py setup --no-create-env &&
-      python main.py seed-demo"
+      sh -c "python main.py setup --no-create-env"
 
   app:
     build:

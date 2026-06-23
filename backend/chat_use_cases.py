@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Protocol
 from uuid import UUID
-
-from sqlalchemy.orm import Session, sessionmaker
 
 from agents.models import (
     AgentAnswer,
@@ -11,9 +11,12 @@ from agents.models import (
     ChatHistoryMessage,
     UnknownAgentError,
 )
-from backend.chat_models import ChatConversationDetail, ChatConversationSummary
+from backend.chat_models import (
+    ChatConversationDetail,
+    ChatConversationSummary,
+    ChatMessageView,
+)
 from backend.use_cases import AgentRunnerFactory, EmptyQuestionError
-from rag.database.chat_repositories import ChatRepository
 
 
 CHAT_CONTEXT_MESSAGE_LIMIT = 6
@@ -31,25 +34,76 @@ class ConversationAccessDeniedError(ConversationError):
     """Raised when a user attempts to access another user's conversation."""
 
 
+@dataclass(frozen=True)
+class StartedChatRun:
+    conversation_id: UUID
+    run_id: UUID
+
+
+@dataclass(frozen=True)
+class ContinuedChatRun:
+    run_id: UUID
+    previous_messages: tuple[ChatMessageView, ...]
+
+
+class ChatConversationStore(Protocol):
+    def list_summaries(
+        self,
+        *,
+        owner_user_id: UUID,
+    ) -> tuple[ChatConversationSummary, ...]: ...
+
+    def load_detail(
+        self,
+        *,
+        owner_user_id: UUID,
+        conversation_id: UUID,
+    ) -> ChatConversationDetail | None: ...
+
+    def start_conversation(
+        self,
+        *,
+        owner_user_id: UUID,
+        question: str,
+    ) -> StartedChatRun: ...
+
+    def append_user_message(
+        self,
+        *,
+        owner_user_id: UUID,
+        conversation_id: UUID,
+        question: str,
+        context_limit: int,
+    ) -> ContinuedChatRun | None: ...
+
+    def complete_run(
+        self,
+        *,
+        owner_user_id: UUID,
+        conversation_id: UUID,
+        run_id: UUID,
+        answer: AgentAnswer,
+    ) -> ChatConversationDetail | None: ...
+
+    def fail_run(self, *, run_id: UUID, error: str) -> None: ...
+
+
 class ChatConversationUseCase:
     def __init__(
         self,
         *,
         agent_runner_factory: AgentRunnerFactory,
-        database_session_factory: sessionmaker[Session],
+        conversation_store: ChatConversationStore,
     ) -> None:
         self._agent_runner_factory = agent_runner_factory
-        self._database_session_factory = database_session_factory
+        self._conversation_store = conversation_store
 
     def list_conversations(
         self,
         *,
         owner_user_id: UUID,
     ) -> tuple[ChatConversationSummary, ...]:
-        with self._database_session_factory() as session:
-            return ChatRepository(session).list_summaries(
-                owner_user_id=owner_user_id
-            )
+        return self._conversation_store.list_summaries(owner_user_id=owner_user_id)
 
     def load_conversation(
         self,
@@ -57,11 +111,10 @@ class ChatConversationUseCase:
         owner_user_id: UUID,
         conversation_id: UUID,
     ) -> ChatConversationDetail:
-        with self._database_session_factory() as session:
-            detail = ChatRepository(session).detail(
-                owner_user_id=owner_user_id,
-                conversation_id=conversation_id,
-            )
+        detail = self._conversation_store.load_detail(
+            owner_user_id=owner_user_id,
+            conversation_id=conversation_id,
+        )
         if detail is None:
             raise ConversationNotFoundError("Conversation not found")
         return detail
@@ -75,24 +128,10 @@ class ChatConversationUseCase:
         requested_agent: str | None = None,
     ) -> ChatConversationDetail:
         normalized_question = _normalized_question(question)
-        with self._database_session_factory() as session:
-            repository = ChatRepository(session)
-            conversation = repository.create_conversation(
-                owner_user_id=owner_user_id,
-                title=normalized_question,
-            )
-            repository.append_message(
-                conversation_id=conversation.id,
-                role="user",
-                content=normalized_question,
-            )
-            run = repository.create_run(
-                conversation_id=conversation.id,
-                question=normalized_question,
-            )
-            conversation_id = conversation.id
-            run_id = run.id
-            session.commit()
+        started_run = self._conversation_store.start_conversation(
+            owner_user_id=owner_user_id,
+            question=normalized_question,
+        )
 
         try:
             answer = self._run_agent(
@@ -101,16 +140,16 @@ class ChatConversationUseCase:
                 limit=limit,
                 requested_agent=requested_agent,
                 conversation_messages=(),
-                conversation_id=conversation_id,
-                run_id=run_id,
+                conversation_id=started_run.conversation_id,
+                run_id=started_run.run_id,
             )
         except Exception as error:
-            self._fail_run(run_id=run_id, error=str(error))
+            self._conversation_store.fail_run(run_id=started_run.run_id, error=str(error))
             raise
         return self._persist_answer(
             owner_user_id=owner_user_id,
-            conversation_id=conversation_id,
-            run_id=run_id,
+            conversation_id=started_run.conversation_id,
+            run_id=started_run.run_id,
             answer=answer,
         )
 
@@ -124,26 +163,14 @@ class ChatConversationUseCase:
         requested_agent: str | None = None,
     ) -> ChatConversationDetail:
         normalized_question = _normalized_question(question)
-        with self._database_session_factory() as session:
-            repository = ChatRepository(session)
-            previous_messages = repository.recent_messages(
-                owner_user_id=owner_user_id,
-                conversation_id=conversation_id,
-                limit=CHAT_CONTEXT_MESSAGE_LIMIT,
-            )
-            if previous_messages is None:
-                raise ConversationNotFoundError("Conversation not found")
-            repository.append_message(
-                conversation_id=conversation_id,
-                role="user",
-                content=normalized_question,
-            )
-            run = repository.create_run(
-                conversation_id=conversation_id,
-                question=normalized_question,
-            )
-            run_id = run.id
-            session.commit()
+        continued_run = self._conversation_store.append_user_message(
+            owner_user_id=owner_user_id,
+            conversation_id=conversation_id,
+            question=normalized_question,
+            context_limit=CHAT_CONTEXT_MESSAGE_LIMIT,
+        )
+        if continued_run is None:
+            raise ConversationNotFoundError("Conversation not found")
 
         try:
             answer = self._run_agent(
@@ -151,18 +178,18 @@ class ChatConversationUseCase:
                 question=normalized_question,
                 limit=limit,
                 requested_agent=requested_agent,
-                conversation_messages=_history_messages(previous_messages),
+                conversation_messages=_history_messages(continued_run.previous_messages),
                 conversation_id=conversation_id,
-                run_id=run_id,
+                run_id=continued_run.run_id,
             )
         except Exception as error:
-            self._fail_run(run_id=run_id, error=str(error))
+            self._conversation_store.fail_run(run_id=continued_run.run_id, error=str(error))
             raise
 
         return self._persist_answer(
             owner_user_id=owner_user_id,
             conversation_id=conversation_id,
-            run_id=run_id,
+            run_id=continued_run.run_id,
             answer=answer,
         )
 
@@ -207,39 +234,15 @@ class ChatConversationUseCase:
         run_id: UUID,
         answer: AgentAnswer,
     ) -> ChatConversationDetail:
-        with self._database_session_factory() as session:
-            repository = ChatRepository(session)
-            assistant_message = repository.append_message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content=answer.answer,
-                insufficient_context=answer.insufficient_context,
-            )
-            repository.add_sources(
-                message_id=assistant_message.id,
-                run_id=run_id,
-                sources=answer.sources,
-            )
-            repository.add_trace_events(run_id=run_id, events=answer.trace_events)
-            repository.complete_run(
-                run_id=run_id,
-                assistant_message_id=assistant_message.id,
-                answer=answer.answer,
-                insufficient_context=answer.insufficient_context,
-            )
-            detail = repository.detail(
-                owner_user_id=owner_user_id,
-                conversation_id=conversation_id,
-            )
-            session.commit()
+        detail = self._conversation_store.complete_run(
+            owner_user_id=owner_user_id,
+            conversation_id=conversation_id,
+            run_id=run_id,
+            answer=answer,
+        )
         if detail is None:
             raise ConversationNotFoundError("Conversation not found")
         return detail
-
-    def _fail_run(self, *, run_id: UUID, error: str) -> None:
-        with self._database_session_factory() as session:
-            ChatRepository(session).fail_run(run_id=run_id, error=error)
-            session.commit()
 
 
 def _normalized_question(question: str) -> str:
@@ -250,11 +253,9 @@ def _normalized_question(question: str) -> str:
 
 
 def _history_messages(
-    messages: tuple[object, ...],
+    messages: tuple[ChatMessageView, ...],
 ) -> tuple[ChatHistoryMessage, ...]:
     history: list[ChatHistoryMessage] = []
     for message in messages:
-        role = getattr(message, "role")
-        content = getattr(message, "content")
-        history.append(ChatHistoryMessage(role=str(role), content=str(content)))
+        history.append(ChatHistoryMessage(role=message.role, content=message.content))
     return tuple(history)

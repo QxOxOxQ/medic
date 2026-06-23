@@ -7,7 +7,6 @@ import pymupdf
 
 import rag.config as settings_module
 from rag.config import DocumentPreparationSettings
-from rag.demo_seed import DemoSeedSummary
 from rag.document_preparation import PreparationSummary
 
 
@@ -82,7 +81,6 @@ def test_main_prepare_returns_zero_and_prints_summary(
     assert exit_code == 0
     assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 failed=0\n"
 
-
 def test_main_ingest_runs_full_process(monkeypatch, capsys) -> None:
     def failing_prepare_documents() -> PreparationSummary:
         raise AssertionError("ingest should run FullProcess")
@@ -101,19 +99,3 @@ def test_main_ingest_runs_full_process(monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 failed=0\n"
-
-
-def test_main_seed_demo_runs_demo_seed(monkeypatch, capsys) -> None:
-    def fake_seed_demo_documents() -> DemoSeedSummary:
-        return DemoSeedSummary(created=3, existing=0, owner_username="admin")
-
-    monkeypatch.setattr(main_module, "seed_demo_documents", fake_seed_demo_documents)
-
-    exit_code = main_module.main(["seed-demo"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 0
-    assert (
-        captured.out
-        == "demo_documents_created=3 demo_documents_existing=0 owner=admin\n"
-    )

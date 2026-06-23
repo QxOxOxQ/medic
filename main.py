@@ -5,7 +5,6 @@ import json
 import logging
 
 from rag.document_preparation import prepare_documents
-from rag.demo_seed import seed_demo_documents
 from rag.full_process import FullProcess
 from rag.setup_project import setup_project
 
@@ -45,10 +44,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("prepare", help="Prepare raw PDF files for later chunking")
     subparsers.add_parser("ingest", help="Prepare and index documents into Qdrant")
-    subparsers.add_parser(
-        "seed-demo",
-        help="Load synthetic demo PDFs into the bootstrap admin account",
-    )
     evaluate_parser = subparsers.add_parser(
         "evaluate",
         help="Run a blocking RAG quality evaluation",
@@ -95,11 +90,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         ingestion_summary = FullProcess().execute()
         return 1 if ingestion_summary.failed else 0
-
-    if args.command == "seed-demo":
-        seed_summary = seed_demo_documents()
-        print(seed_summary.as_report_line())
-        return 0
 
     if args.command in {
         "evaluate",

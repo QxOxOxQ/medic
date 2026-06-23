@@ -11,6 +11,7 @@ from backend.chat_use_cases import ChatConversationUseCase
 from dashboard.app import create_app
 from dashboard.auth import AuthSettings
 from rag.database.migrations import upgrade_database
+from rag.database.chat_store import SqlAlchemyChatConversationStore
 from rag.database.repositories import UserRepository
 from rag.database.session import create_database_engine
 
@@ -95,7 +96,7 @@ def _client(
     session_factory = _database_session_factory(tmp_path)
     use_case = ChatConversationUseCase(
         agent_runner_factory=RecordingAgentRunnerFactory(runner),
-        database_session_factory=session_factory,
+        conversation_store=SqlAlchemyChatConversationStore(session_factory),
     )
     app = create_app(
         auth_settings=AuthSettings(

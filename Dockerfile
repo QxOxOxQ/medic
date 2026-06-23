@@ -37,7 +37,6 @@ COPY --chown=medic:medic agents ./agents
 COPY --chown=medic:medic backend ./backend
 COPY --chown=medic:medic clients ./clients
 COPY --chown=medic:medic dashboard ./dashboard
-COPY --chown=medic:medic demo_documents ./demo_documents
 COPY --chown=medic:medic migrations ./migrations
 COPY --chown=medic:medic observability ./observability
 COPY --chown=medic:medic rag ./rag
