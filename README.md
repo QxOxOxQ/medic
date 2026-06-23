@@ -305,6 +305,16 @@ your Qdrant administration tooling after confirming that no historical run needs
 them. Full runs use live Langfuse, OpenRouter, and Qdrant services and incur model
 and embedding costs.
 
+To run evaluation independently in GitHub Actions, open **Actions**, select
+**Live RAG Evaluation**, choose **Run workflow**, select the `main` branch and
+suite, then start the workflow. Runs selected from other branches are skipped,
+and evaluation runs are serialized to protect shared external resources. The
+repository must define these Actions secrets:
+`OPENROUTER_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`,
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_BASE_URL`.
+Evaluation is independent from the **Deploy OCI** workflow and does not run
+automatically during deployment.
+
 Dashboard:
 
 ```bash

@@ -10,6 +10,9 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      QdrantURL: http://127.0.0.1:6333
+      QdrantApiKey: test-qdrant-key
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

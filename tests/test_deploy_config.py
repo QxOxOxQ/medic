@@ -36,7 +36,19 @@ def test_production_compose_requires_database_secrets() -> None:
     assert "POSTGRES_PASSWORD: medic" not in compose
 
 
-def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
+def test_ci_workflow_configures_qdrant_for_quality_tests() -> None:
+    workflow = (
+        PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+    qdrant_url_env = SETTINGS["env"]["qdrant_url"]
+    qdrant_api_key_env = SETTINGS["env"]["qdrant_api_key"]
+
+    assert f"{qdrant_url_env}: http://127.0.0.1:6333" in workflow
+    assert f"{qdrant_api_key_env}: test-qdrant-key" in workflow
+    assert "make verify" in workflow
+
+
+def test_deploy_workflow_verifies_before_push_and_oci_deploy() -> None:
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
     ).read_text(encoding="utf-8")
@@ -52,15 +64,11 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
         "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
         "&& github.ref == 'refs/heads/main'"
     ) in workflow
-    assert "vars.MEDIC_RUN_LIVE_EVALUATION == 'true'" in workflow
-    assert (
-        "needs.verify.result == 'success' && "
-        "(needs.evaluation.result == 'success' || needs.evaluation.result == 'skipped')"
-    ) in workflow
     assert "always() && needs.image.result == 'success'" in workflow
-    assert "evaluation-bootstrap-dataset --suite medical-demo-v1" in workflow
-    assert "evaluation-calibrate" in workflow
-    assert "evaluate --suite medical-demo-v1" in workflow
+    assert "MEDIC_RUN_LIVE_EVALUATION" not in workflow
+    assert "evaluation-bootstrap-dataset" not in workflow
+    assert "evaluation-calibrate" not in workflow
+    assert "main.py evaluate" not in workflow
     assert "docker push \"${IMAGE_SHA}\"" in workflow
     assert "docker push \"${IMAGE_LATEST}\"" in workflow
     assert "runs-on: [self-hosted, Linux, X64]" in workflow
@@ -76,3 +84,21 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
     assert "docker compose -f docker-compose.prod.yml pull" in workflow
     assert "docker compose -f docker-compose.prod.yml up -d" in workflow
     assert "curl -fsS http://127.0.0.1:8000/healthz" in workflow
+
+
+def test_evaluation_workflow_runs_independently_on_demand() -> None:
+    workflow = (
+        PROJECT_ROOT / ".github" / "workflows" / "evaluation.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "name: Live RAG Evaluation" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "suite:" in workflow
+    assert "default: medical-demo-v1" in workflow
+    assert "group: live-rag-evaluation" in workflow
+    assert "live-rag-evaluation-${{ github.ref }}" not in workflow
+    assert "if: github.ref == 'refs/heads/main'" in workflow
+    assert "MEDIC_RUN_LIVE_EVALUATION" not in workflow
+    assert "evaluation-bootstrap-dataset --suite \"${EVALUATION_SUITE}\"" in workflow
+    assert "evaluation-calibrate" in workflow
+    assert "evaluate --suite \"${EVALUATION_SUITE}\"" in workflow

@@ -1,0 +1,71 @@
+name: Live RAG Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Evaluation suite to run
+        required: true
+        default: medical-demo-v1
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-rag-evaluation
+  cancel-in-progress: false
+
+jobs:
+  evaluation:
+    name: Evaluate ${{ inputs.suite }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      MEDIC_DATABASE_URL: sqlite:////tmp/medic-evaluation.db
+      MEDIC_QDRANT_COLLECTION: hybrid_medic_ci_guard
+      MEDIC_EVAL_QDRANT_PREFIX: medic_eval_ci
+      MEDIC_EVAL_JUDGE_MODEL: openai/gpt-4.1-mini
+      MEDIC_EVAL_EMBEDDING_MODEL: openai/text-embedding-3-small
+      MEDIC_DASHBOARD_USERNAME: eval
+      MEDIC_DASHBOARD_PASSWORD: eval-ci-password
+      MEDIC_SESSION_SECRET: eval-ci-session-secret
+      MEDIC_DASHBOARD_COOKIE_SECURE: "false"
+      MEDIC_LANGFUSE_TRACING_ENABLED: "false"
+      MEDIC_LANGFUSE_CAPTURE_CONTENT: "false"
+      MEDIC_LANGFUSE_ENVIRONMENT: evaluation-ci
+      LANGFUSE_TRACING_ENVIRONMENT: evaluation-ci
+      EVALUATION_SUITE: ${{ inputs.suite }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      QdrantURL: ${{ secrets.QDRANT_URL }}
+      QdrantApiKey: ${{ secrets.QDRANT_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Prepare evaluation database
+        run: uv run python main.py setup --skip-qdrant --no-create-env
+
+      - name: Bootstrap Langfuse dataset
+        run: uv run python main.py evaluation-bootstrap-dataset --suite "${EVALUATION_SUITE}"
+
+      - name: Calibrate RAGAS judge
+        run: uv run python main.py evaluation-calibrate
+
+      - name: Run quality gate
+        run: uv run python main.py evaluate --suite "${EVALUATION_SUITE}"
