@@ -91,7 +91,7 @@ docker run --rm --env-file runtime.env \
   medic:local python main.py setup --no-create-env
 
 docker run --rm --env-file runtime.env \
-  --publish 127.0.0.1:8000:8000 \
+  --publish 0.0.0.0:8000:8000 \
   --volume medic_data:/app/data \
   medic:local
 ```
@@ -114,7 +114,8 @@ runtime environment.
 ## Production Compose
 
 `docker-compose.prod.yml` is the OCI runner deployment file used by the GitHub
-Actions workflow. Keep `/opt/medic/.env` on the host and set at least:
+Actions workflow. It publishes the dashboard on host port `8000`. Keep
+`/opt/medic/.env` on the host and set at least:
 
 ```env
 MEDIC_IMAGE=ghcr.io/qxoxoxq/medic:sha-...

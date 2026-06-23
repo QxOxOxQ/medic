@@ -15,7 +15,8 @@ def test_production_compose_uses_published_image_without_demo_seed() -> None:
     assert "postgresql+psycopg://" in compose
     assert "python main.py setup --no-create-env" in compose
     assert "seed-demo" not in compose
-    assert '"127.0.0.1:8000:8000"' in compose
+    assert '"0.0.0.0:8000:8000"' in compose
+    assert '"127.0.0.1:8000:8000"' not in compose
     assert "postgres_data:/var/lib/postgresql" in compose
     assert "demo_data:/app/data" in compose
 

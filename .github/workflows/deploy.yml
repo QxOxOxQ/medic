@@ -219,14 +219,26 @@ jobs:
           EOF
           chmod 600 /opt/medic/.env
 
+      - name: Bootstrap Docker on runner
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo dnf install -y dnf-plugins-core
+            sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+            sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          fi
+          sudo systemctl enable --now docker
+          sudo docker version
+          sudo docker compose version
+
       - name: Deploy image
         run: |
           set -euo pipefail
           cd /opt/medic
           test -f .env
           export MEDIC_IMAGE="${DEPLOY_IMAGE}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml pull
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml up -d
           curl -fsS http://127.0.0.1:8000/healthz >/dev/null
-          docker compose -f docker-compose.prod.yml ps
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
