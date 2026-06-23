@@ -56,6 +56,7 @@ def test_deploy_workflow_runs_quality_gate_before_push_and_oci_deploy() -> None:
         "needs.verify.result == 'success' && "
         "(needs.evaluation.result == 'success' || needs.evaluation.result == 'skipped')"
     ) in workflow
+    assert "always() && needs.image.result == 'success'" in workflow
     assert "evaluation-bootstrap-dataset --suite medical-demo-v1" in workflow
     assert "evaluation-calibrate" in workflow
     assert "evaluate --suite medical-demo-v1" in workflow
