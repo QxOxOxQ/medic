@@ -24,6 +24,9 @@
         <h1>Dashboard</h1>
       </div>
       <div class="topbar-actions">
+        {% if is_admin %}
+          <a class="ghost-button admin-link" href="/admin">Admin</a>
+        {% endif %}
         <form method="post" action="/logout">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="ghost-button" type="submit" data-i18n="auth.logout" data-i18n-param-username="{{ username }}">Log out {{ username }}</button>

@@ -18,6 +18,7 @@ from backend.factory import (
 )
 from backend.routes import router as backend_router
 from backend.use_cases import AnswerQuestionUseCase
+from dashboard.admin import configure_admin
 from dashboard.auth import AuthSettings, load_auth_settings
 from dashboard.dependencies import current_user as resolve_current_user
 from dashboard.jobs import JobStore
@@ -63,7 +64,8 @@ def create_app(
         database_session_factory=session_factory,
     )
 
-    app.state.auth_settings = auth_settings or load_auth_settings()
+    resolved_auth_settings = auth_settings or load_auth_settings()
+    app.state.auth_settings = resolved_auth_settings
     app.state.agent_observability = observability
     app.state.document_settings = (
         document_settings or get_document_preparation_settings()
@@ -114,6 +116,11 @@ def create_app(
     app.include_router(jobs.router)
     app.include_router(search.router)
     app.include_router(backend_router)
+    configure_admin(
+        app,
+        auth_settings=resolved_auth_settings,
+        session_factory=session_factory,
+    )
     return app
 
 

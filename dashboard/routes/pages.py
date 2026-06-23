@@ -88,6 +88,7 @@ def index(request: Request) -> Response:
         "index.html",
         {
             "username": user.username,
+            "is_admin": user.is_admin,
             "csrf_token": session.csrf_token,
         },
     )

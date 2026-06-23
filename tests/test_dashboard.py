@@ -24,9 +24,13 @@ from rag.config import DocumentPreparationSettings
 from rag.database import DocumentRepository, UserRepository
 from rag.database.chat_store import SqlAlchemyChatConversationStore
 from rag.database.migrations import upgrade_database
+from rag.database.security import verify_password
 from rag.database.session import create_database_engine
 from rag.document_preparation import calculate_text_sha256, prepare_documents
 from rag.full_process import FullProcess
+
+
+ADMIN_ORIGIN_HEADERS = {"origin": "http://testserver"}
 
 
 class _SearchServiceStub:
@@ -183,10 +187,15 @@ def _datetime_from_iso_z(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _login(client: TestClient) -> None:
+def _login(
+    client: TestClient,
+    *,
+    username: str = "admin",
+    password: str = "secret",
+) -> None:
     response = client.post(
         "/login",
-        data={"username": "admin", "password": "secret"},
+        data={"username": username, "password": password},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -238,6 +247,272 @@ def test_dashboard_login_rejects_invalid_credentials_and_sets_session(
     assert valid.status_code == 303
     assert "medic_dashboard_session=" in valid.headers["set-cookie"]
     assert "HttpOnly" in valid.headers["set-cookie"]
+
+
+def test_admin_redirects_to_admin_login_without_session(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+
+    response = client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"].endswith("/admin/login")
+
+
+def test_admin_rejects_logged_in_non_admin_user(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    with client.app.state.database_session_factory() as session:
+        UserRepository(session).create_user(username="viewer", password="secret")
+        session.commit()
+    _login(client, username="viewer", password="secret")
+
+    response = client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"].endswith("/admin/login")
+
+
+def test_admin_dashboard_allows_active_admin_user(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+
+    response = client.get("/admin/")
+    rendered_dashboard = client.get("/")
+
+    assert response.status_code == 200
+    assert "Medic Admin" in response.text
+    assert 'href="/admin"' in rendered_dashboard.text
+
+
+def test_admin_accepts_sqladmin_login_form(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "secret"},
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+    admin_response = client.get("/admin/")
+
+    assert response.status_code == 302
+    assert "medic_sqladmin_session=" in response.headers["set-cookie"]
+    assert admin_response.status_code == 200
+    assert "Medic Admin" in admin_response.text
+
+
+def test_admin_renders_user_create_and_edit_forms(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).create_user(username="editor", password="old")
+        user_id = user.id
+        session.commit()
+    _login(client)
+
+    create_response = client.get("/admin/user/create")
+    edit_response = client.get(f"/admin/user/edit/{user_id}")
+
+    assert create_response.status_code == 200
+    assert edit_response.status_code == 200
+    assert "Password" in create_response.text
+    assert "$argon2" not in edit_response.text
+
+
+def test_admin_creates_user_with_hashed_password(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+
+    response = client.post(
+        "/admin/user/create",
+        data={
+            "username": "NewUser",
+            "password_hash": "new-secret",
+            "is_active": "y",
+            "is_admin": "y",
+            "save": "Save",
+        },
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).get_by_username("newuser")
+        assert user is not None
+        assert user.password_hash != "new-secret"
+        assert verify_password("new-secret", user.password_hash)
+        assert user.is_active is True
+        assert user.is_admin is True
+
+
+def test_admin_preserves_user_password_when_edit_password_is_empty(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).create_user(username="editor", password="old")
+        user_id = user.id
+        old_hash = user.password_hash
+        session.commit()
+    _login(client)
+
+    response = client.post(
+        f"/admin/user/edit/{user_id}",
+        data={
+            "username": "Editor",
+            "password_hash": "",
+            "is_active": "y",
+            "save": "Save",
+        },
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).get_by_id(user_id)
+        assert user is not None
+        assert user.username == "editor"
+        assert user.password_hash == old_hash
+        assert verify_password("old", user.password_hash)
+        assert user.is_admin is False
+
+
+def test_admin_updates_user_password_when_edit_password_is_present(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).create_user(username="editor", password="old")
+        user_id = user.id
+        old_hash = user.password_hash
+        session.commit()
+    _login(client)
+
+    response = client.post(
+        f"/admin/user/edit/{user_id}",
+        data={
+            "username": "editor",
+            "password_hash": "new",
+            "is_active": "y",
+            "save": "Save",
+        },
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).get_by_id(user_id)
+        assert user is not None
+        assert user.password_hash != old_hash
+        assert verify_password("new", user.password_hash)
+        assert UserRepository(session).authenticate(
+            username="editor",
+            password="new",
+        ) is not None
+
+
+def test_admin_rejects_mutation_without_same_origin_header(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+
+    response = client.post(
+        "/admin/user/create",
+        data={
+            "username": "blocked",
+            "password_hash": "secret",
+            "is_active": "y",
+            "is_admin": "y",
+            "save": "Save",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    with client.app.state.database_session_factory() as session:
+        assert UserRepository(session).get_by_username("blocked") is None
+
+
+def test_admin_blocks_demoting_last_active_admin(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+    with client.app.state.database_session_factory() as session:
+        admin = UserRepository(session).get_by_username("admin")
+        assert admin is not None
+        admin_id = admin.id
+
+    response = client.post(
+        f"/admin/user/edit/{admin_id}",
+        data={
+            "username": "admin",
+            "password_hash": "",
+            "is_active": "y",
+            "save": "Save",
+        },
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "At least one active admin user is required." in response.text
+    with client.app.state.database_session_factory() as session:
+        admin = UserRepository(session).get_by_id(admin_id)
+        assert admin is not None
+        assert admin.is_admin is True
+        assert admin.is_active is True
+
+
+def test_admin_blocks_deactivating_last_active_admin(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+    with client.app.state.database_session_factory() as session:
+        admin = UserRepository(session).get_by_username("admin")
+        assert admin is not None
+        admin_id = admin.id
+
+    response = client.post(
+        f"/admin/user/edit/{admin_id}",
+        data={
+            "username": "admin",
+            "password_hash": "",
+            "is_admin": "y",
+            "save": "Save",
+        },
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "At least one active admin user is required." in response.text
+    with client.app.state.database_session_factory() as session:
+        admin = UserRepository(session).get_by_id(admin_id)
+        assert admin is not None
+        assert admin.is_admin is True
+        assert admin.is_active is True
+
+
+def test_admin_blocks_deleting_last_active_admin(tmp_path, monkeypatch) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+    with client.app.state.database_session_factory() as session:
+        admin = UserRepository(session).get_by_username("admin")
+        assert admin is not None
+        admin_id = admin.id
+
+    response = client.delete(
+        f"/admin/user/delete?pks={admin_id}",
+        headers=ADMIN_ORIGIN_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    with client.app.state.database_session_factory() as session:
+        assert UserRepository(session).get_by_id(admin_id) is not None
 
 
 def test_login_page_ignores_session_for_inactive_database_user(

@@ -184,6 +184,20 @@ Login is verified in PostgreSQL. `main.py setup` creates the admin user from tho
 
 The dashboard is English-only. There is no language selector and agent answers are requested in English.
 
+### Admin SQL dashboard
+
+Admin users can open the SQLAdmin panel at:
+
+```text
+http://127.0.0.1:8000/admin
+```
+
+Access requires an active PostgreSQL user with `is_admin=true`. The panel exposes
+CRUD for the application SQL tables, including users. User passwords entered
+through the admin form are stored as Argon2 hashes. Treat this panel as a
+technical administration tool: direct edits to document, chunk, and chat records
+do not automatically update local PDF files, markdown files, or Qdrant points.
+
 ## Docker Development Mode
 
 For day-to-day work, use the development override. Code is mounted into the container, so Python, HTML, JS, and CSS changes are visible without rebuilding the image:
