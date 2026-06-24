@@ -60,6 +60,7 @@ class ChatTraceEventView:
             "id": str(self.id),
             "sequence": self.sequence,
             "event_type": self.event_type,
+            "phase": _trace_phase(self),
             "title": self.title,
             "status": self.status,
             "agent_name": self.agent_name,
@@ -68,6 +69,20 @@ class ChatTraceEventView:
             "duration_ms": self.duration_ms,
             "created_at": self.created_at.isoformat(),
         }
+
+
+def _trace_phase(event: ChatTraceEventView) -> str:
+    if event.event_type == "coordinator":
+        return "coordinator"
+    if event.event_type == "tool_call":
+        return "retrieval"
+    if event.event_type == "review":
+        return "review"
+    if event.event_type == "synthesis":
+        return "synthesis"
+    if event.event_type == "error":
+        return "error"
+    return "specialist"
 
 
 @dataclass(frozen=True)

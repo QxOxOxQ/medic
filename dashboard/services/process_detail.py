@@ -64,6 +64,94 @@ class ProcessDetailService:
             "index": self._qdrant_index.preview_content_hash(record.content_hash),
         }
 
+    def document_process_detail_by_id(
+        self,
+        document_id: UUID,
+        *,
+        settings: DocumentPreparationSettings,
+        owner_user_id: UUID,
+    ) -> dict[str, Any]:
+        record = self._record_by_id(
+            document_id,
+            settings=settings,
+            owner_user_id=owner_user_id,
+        )
+        return self.document_process_detail(
+            record.relative_raw_path,
+            settings=settings,
+            owner_user_id=owner_user_id,
+        )
+
+    def markdown_by_id(
+        self,
+        document_id: UUID,
+        *,
+        settings: DocumentPreparationSettings,
+        owner_user_id: UUID,
+    ) -> tuple[DocumentRecord, str | None]:
+        record = self._record_by_id(
+            document_id,
+            settings=settings,
+            owner_user_id=owner_user_id,
+        )
+        return record, _read_markdown(record, settings=settings)
+
+    def chunks_by_id(
+        self,
+        document_id: UUID,
+        *,
+        settings: DocumentPreparationSettings,
+        owner_user_id: UUID,
+    ) -> tuple[DocumentRecord, list[dict[str, Any]]]:
+        record, markdown = self.markdown_by_id(
+            document_id,
+            settings=settings,
+            owner_user_id=owner_user_id,
+        )
+        chunks = _database_chunks_payload(
+            session_factory=self._database_session_factory,
+            relative_raw_path=record.relative_raw_path,
+            owner_user_id=owner_user_id,
+        )
+        if chunks or markdown is None:
+            return record, chunks
+        return record, _chunks_payload(
+            markdown,
+            parsed_markdown_path=record.parsed_markdown_path,
+            content_hash=record.content_hash,
+        )
+
+    def index_points_by_id(
+        self,
+        document_id: UUID,
+        *,
+        settings: DocumentPreparationSettings,
+        owner_user_id: UUID,
+    ) -> tuple[DocumentRecord, dict[str, Any]]:
+        record = self._record_by_id(
+            document_id,
+            settings=settings,
+            owner_user_id=owner_user_id,
+        )
+        return record, self._qdrant_index.preview_content_hash(record.content_hash)
+
+    def _record_by_id(
+        self,
+        document_id: UUID,
+        *,
+        settings: DocumentPreparationSettings,
+        owner_user_id: UUID,
+    ) -> DocumentRecord:
+        record = self._catalog.record_by_id(
+            settings,
+            owner_user_id=owner_user_id,
+            document_id=document_id,
+            check_index=False,
+        )
+        if record is None:
+            raise ValueError(f"Document not found: {document_id}")
+        return record
+
 
 def _find_record(
     records: list[DocumentRecord],

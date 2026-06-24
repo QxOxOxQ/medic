@@ -155,6 +155,51 @@ class DocumentStorage:
             "qdrant_cleanup": cleanup.as_dict(),
         }
 
+    def delete_document_by_id(
+        self,
+        document_id: UUID,
+        *,
+        owner: AuthenticatedUser,
+        settings: DocumentPreparationSettings,
+    ) -> dict[str, Any]:
+        session_factory = self._database_session_factory
+        if session_factory is None:
+            raise DocumentOperationError("Database storage is not configured")
+        with session_factory() as session:
+            document = DocumentRepository(session).get_by_id_for_owner(
+                document_id=document_id,
+                owner_user_id=owner.id,
+            )
+            if document is None:
+                raise DocumentOperationError(f"Document not found: {document_id}")
+            relative_raw_path = document.relative_raw_path
+        return self.delete_document(
+            relative_raw_path,
+            owner=owner,
+            settings=settings,
+        )
+
+    def delete_documents_by_id(
+        self,
+        document_ids: Iterable[UUID],
+        *,
+        owner: AuthenticatedUser,
+        settings: DocumentPreparationSettings,
+    ) -> dict[str, Any]:
+        deletions = [
+            self.delete_document_by_id(
+                document_id,
+                owner=owner,
+                settings=settings,
+            )
+            for document_id in document_ids
+        ]
+        return {
+            "deleted_count": len(deletions),
+            "deletions": [item["deletion"] for item in deletions],
+            "qdrant_cleanups": [item["qdrant_cleanup"] for item in deletions],
+        }
+
     def delete_documents(
         self,
         relative_raw_paths: Iterable[str],

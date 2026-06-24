@@ -30,13 +30,13 @@ jobs:
       QdrantApiKey: test-qdrant-key
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
-          version: "0.11.23"
+          version: "0.11.24"
 
       - name: Install Python
         run: uv python install
@@ -56,7 +56,7 @@ jobs:
       image: ${{ steps.metadata.outputs.image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build runtime image
         id: metadata
@@ -137,7 +137,7 @@ jobs:
       MEDIC_SESSION_SECRET: ${{ secrets.MEDIC_SESSION_SECRET }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install production Compose file
         run: |
@@ -184,5 +184,15 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
           sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml pull
           sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml up -d
-          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz >/dev/null; then
+              break
+            fi
+            if test "${attempt}" -eq 30; then
+              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
+              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml logs app
+              exit 1
+            fi
+            sleep 2
+          done
           sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps

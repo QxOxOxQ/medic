@@ -8,6 +8,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
 def template_response(
     templates: Jinja2Templates,
     request: Request,
@@ -34,10 +41,13 @@ def sse(event: str, payload: dict[str, Any], *, event_id: int | None = None) -> 
     return f"{event_id_line}event: {event}\ndata: {data}\n\n"
 
 
+def sse_heartbeat() -> str:
+    return ": keep-alive\n\n"
+
+
 def bounded_limit(raw_limit: Any) -> int:
     try:
         limit = int(raw_limit)
     except (TypeError, ValueError):
         limit = 10
     return max(1, min(limit, 20))
-

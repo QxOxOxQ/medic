@@ -83,7 +83,11 @@ def test_deploy_workflow_verifies_before_push_and_oci_deploy() -> None:
     assert "docker login \"${REGISTRY}\"" in workflow
     assert "docker compose -f docker-compose.prod.yml pull" in workflow
     assert "docker compose -f docker-compose.prod.yml up -d" in workflow
+    assert "for attempt in $(seq 1 30); do" in workflow
     assert "curl -fsS http://127.0.0.1:8000/healthz" in workflow
+    assert 'if test "${attempt}" -eq 30; then' in workflow
+    assert "docker compose -f docker-compose.prod.yml logs app" in workflow
+    assert "sleep 2" in workflow
 
 
 def test_evaluation_workflow_runs_independently_on_demand() -> None:

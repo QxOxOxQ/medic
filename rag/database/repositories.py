@@ -121,6 +121,19 @@ class DocumentRepository:
             select(Document).where(Document.relative_raw_path == relative_raw_path)
         )
 
+    def get_by_id_for_owner(
+        self,
+        *,
+        document_id: UUID,
+        owner_user_id: UUID,
+    ) -> Document | None:
+        return self._session.scalar(
+            select(Document).where(
+                Document.id == document_id,
+                Document.owner_user_id == owner_user_id,
+            )
+        )
+
     def get_by_relative_raw_path_for_owner(
         self,
         *,

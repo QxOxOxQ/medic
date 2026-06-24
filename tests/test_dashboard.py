@@ -13,7 +13,7 @@ from qdrant_client.http import models
 from sqlalchemy.orm import sessionmaker
 
 import rag.config as settings_module
-from agents.models import AgentAnswer
+from agents.models import AgentAnswer, AgentTraceEvent
 from backend.chat_use_cases import ChatConversationUseCase
 from backend.use_cases import AnswerQuestionUseCase
 from dashboard.app import create_app
@@ -116,6 +116,79 @@ def test_healthcheck_is_public(tmp_path: Path, monkeypatch) -> None:
 
     assert response.status_code == 204
     assert response.content == b""
+
+
+def test_durable_sse_replays_after_last_event_id_and_disables_buffering(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).get_by_username("admin")
+        assert user is not None
+        owner_user_id = user.id
+
+    pipeline_repository = client.app.state.pipeline_run_repository
+    pipeline = pipeline_repository.create(
+        owner_user_id=owner_user_id,
+        document_ids=(),
+    )
+    pipeline_repository.start(run_id=pipeline.run.id)
+    for index in (1, 2):
+        pipeline_repository.append_event(
+            run_id=pipeline.run.id,
+            payload={
+                "step": "pipeline",
+                "status": "running",
+                "message": f"Event {index}",
+            },
+        )
+    pipeline_repository.finish(
+        run_id=pipeline.run.id,
+        status="succeeded",
+        summary="Done",
+        error=None,
+    )
+
+    response = client.get(
+        f"/api/pipeline-runs/{pipeline.run.id}/events",
+        headers={"Last-Event-ID": "1"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    assert "id: 1\n" not in response.text
+    assert "id: 2\n" in response.text
+    assert "event: done\n" in response.text
+
+    chat_store = client.app.state.chat_run_store
+    chat = chat_store.start_conversation(
+        owner_user_id=owner_user_id,
+        question="Question",
+    )
+    sink = chat_store.trace_sink(run_id=chat.run_id)
+    for index in (1, 2):
+        sink.record(
+            AgentTraceEvent(
+                sequence=index,
+                event_type="coordinator",
+                title=f"Trace {index}",
+                status="succeeded",
+            )
+        )
+    chat_store.fail_run(run_id=chat.run_id, error="Expected failure")
+
+    chat_response = client.get(
+        f"/api/chat/runs/{chat.run_id}/events",
+        headers={"Last-Event-ID": "1"},
+    )
+
+    assert chat_response.status_code == 200
+    assert "id: 1\n" not in chat_response.text
+    assert "id: 2\n" in chat_response.text
+    assert "event: done\n" in chat_response.text
 
 
 def _isolate_external_env(tmp_path: Path, monkeypatch) -> None:
@@ -280,7 +353,8 @@ def test_admin_dashboard_allows_active_admin_user(tmp_path, monkeypatch) -> None
 
     assert response.status_code == 200
     assert "Medic Admin" in response.text
-    assert 'href="/admin"' in rendered_dashboard.text
+    assert 'data-is-admin="true"' in rendered_dashboard.text
+    assert '<script type="module"' in rendered_dashboard.text
 
 
 def test_admin_accepts_sqladmin_login_form(tmp_path, monkeypatch) -> None:
@@ -560,11 +634,14 @@ def test_dashboard_has_no_language_preferences_endpoint(tmp_path, monkeypatch) -
     assert "preferred" + "_language" not in rendered.text
 
 
-def test_dashboard_renders_process_detail_panel(tmp_path, monkeypatch) -> None:
+def test_legacy_dashboard_remains_available_during_ui_migration(
+    tmp_path,
+    monkeypatch,
+) -> None:
     client, _ = _client(tmp_path, monkeypatch)
     _login(client)
 
-    response = client.get("/")
+    response = client.get("/legacy")
 
     assert response.status_code == 200
     assert "Process details" in response.text
@@ -686,6 +763,71 @@ def test_dashboard_uploads_multiple_pdfs(tmp_path, monkeypatch) -> None:
     assert {
         document["relative_raw_path"] for document in documents.json()["documents"]
     } == {report_path, summary_path}
+
+
+def test_dashboard_reports_each_file_in_a_partial_upload(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch)
+    _login(client)
+    csrf_token = _csrf_token(client)
+
+    response = client.post(
+        "/api/documents/upload",
+        data={"csrf_token": csrf_token},
+        files=[
+            ("file", ("report.pdf", b"%PDF-1.4\nreport", "application/pdf")),
+            ("file", ("notes.txt", b"notes", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 207
+    assert response.json()["uploaded_count"] == 1
+    assert response.json()["failed_count"] == 1
+    assert [result["status"] for result in response.json()["results"]] == [
+        "uploaded",
+        "failed",
+    ]
+
+
+def test_documents_api_paginates_filters_and_addresses_records_by_uuid(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, settings = _client(tmp_path, monkeypatch)
+    settings.raw_documents_dir.mkdir(parents=True, exist_ok=True)
+    for index in range(27):
+        relative_path = f"report-{index:02d}.pdf"
+        (settings.raw_documents_dir / relative_path).write_bytes(b"%PDF-1.4\n")
+        _seed_document_record(
+            client,
+            relative_raw_path=relative_path,
+            original_filename=relative_path,
+        )
+    _login(client)
+
+    first_page = client.get(
+        "/api/documents",
+        params={"page": 1, "page_size": 25, "status": "raw", "sort": "name"},
+    )
+    second_page = client.get(
+        "/api/documents",
+        params={"page": 2, "page_size": 25, "status": "raw", "sort": "name"},
+    )
+    filtered = client.get("/api/documents", params={"query": "report-26"})
+    document_id = filtered.json()["documents"][0]["id"]
+    detail = client.get(f"/api/documents/{document_id}")
+
+    assert first_page.status_code == 200
+    assert len(first_page.json()["documents"]) == 25
+    assert first_page.json()["total"] == 27
+    assert first_page.json()["pages"] == 2
+    assert first_page.json()["status_counts"]["raw"] == 27
+    assert len(second_page.json()["documents"]) == 2
+    assert filtered.json()["documents"][0]["display_name"] == "report-26.pdf"
+    assert detail.status_code == 200
+    assert detail.json()["document"]["id"] == document_id
 
 
 def test_dashboard_delete_removes_raw_parsed_and_database_record(

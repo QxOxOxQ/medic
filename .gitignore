@@ -3,6 +3,8 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+node_modules/
+dashboard/static/dist/
 wheels/
 *.egg-info
 
@@ -17,6 +19,8 @@ wheels/
 
 # Test artifacts
 .pytest_cache/
+playwright-report/
+test-results/
 tmp/
 
 # Generated document data

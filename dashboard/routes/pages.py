@@ -9,6 +9,7 @@ from dashboard.auth import (
     set_session_cookie,
     verify_csrf,
 )
+from dashboard.assets import AssetManifest
 from dashboard.dependencies import (
     auth_settings,
     current_user,
@@ -77,6 +78,20 @@ def logout(request: Request, csrf_token: str = Form("")) -> RedirectResponse:
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request) -> Response:
+    return _application_page(request)
+
+
+@router.get("/overview", response_class=HTMLResponse)
+@router.get("/documents", response_class=HTMLResponse)
+@router.get("/pipeline", response_class=HTMLResponse)
+@router.get("/assistant", response_class=HTMLResponse)
+@router.get("/retrieval", response_class=HTMLResponse)
+def application_route(request: Request) -> Response:
+    return _application_page(request)
+
+
+@router.get("/legacy", response_class=HTMLResponse)
+def legacy_dashboard(request: Request) -> Response:
     session = read_session(request, auth_settings(request))
     if session is None:
         return redirect("/login")
@@ -90,6 +105,27 @@ def index(request: Request) -> Response:
             "username": user.username,
             "is_admin": user.is_admin,
             "csrf_token": session.csrf_token,
+        },
+    )
+
+
+def _application_page(request: Request) -> Response:
+    session = read_session(request, auth_settings(request))
+    if session is None:
+        return redirect("/login")
+    user = current_user(request)
+    assets = AssetManifest(
+        manifest_path=request.app.state.frontend_manifest_path,
+    ).frontend()
+    return template_response(
+        templates(request),
+        request,
+        "app.html",
+        {
+            "username": user.username,
+            "is_admin": user.is_admin,
+            "csrf_token": session.csrf_token,
+            "frontend_assets": assets,
         },
     )
 

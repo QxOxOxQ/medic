@@ -48,7 +48,7 @@ class RetrievalService:
         search_provider: SearchProvider | None = None,
         database_session_factory: sessionmaker[Session] | None = None,
     ) -> None:
-        self._search_provider = search_provider or Searcher()
+        self._search_provider = search_provider
         self._database_session_factory = database_session_factory
 
     def search(
@@ -58,7 +58,8 @@ class RetrievalService:
         limit: int,
         owner_user_id: UUID | None = None,
     ) -> list[SearchResult]:
-        response = self._search_provider.search(query, k=limit)
+        search_provider = self._search_provider or Searcher()
+        response = search_provider.search(query, k=limit)
         return search_results_from_response(
             response,
             limit=limit,

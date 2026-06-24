@@ -15,6 +15,7 @@ from backend.chat_models import (
     ChatSourceView,
     ChatTraceEventView,
 )
+from backend.chat_run_models import ChatRunView
 from rag.database.models import (
     ChatConversation,
     ChatMessage,
@@ -111,6 +112,24 @@ class ChatRepository:
         self._session.flush()
         return run
 
+    def has_active_run(
+        self,
+        *,
+        owner_user_id: UUID,
+        conversation_id: UUID,
+    ) -> bool:
+        run_id = self._session.scalar(
+            select(ChatRun.id)
+            .join(ChatConversation)
+            .where(
+                ChatRun.conversation_id == conversation_id,
+                ChatRun.status == "running",
+                ChatConversation.owner_user_id == owner_user_id,
+            )
+            .limit(1)
+        )
+        return run_id is not None
+
     def complete_run(
         self,
         *,
@@ -169,7 +188,14 @@ class ChatRepository:
         run_id: UUID,
         events: Iterable[AgentTraceEvent],
     ) -> None:
+        existing = set(
+            self._session.scalars(
+                select(ChatTraceEvent.sequence).where(ChatTraceEvent.run_id == run_id)
+            )
+        )
         for event in events:
+            if event.sequence in existing:
+                continue
             self._session.add(
                 ChatTraceEvent(
                     run_id=run_id,
@@ -184,6 +210,118 @@ class ChatRepository:
                 )
             )
         self._session.flush()
+
+    def add_trace_event(
+        self,
+        *,
+        run_id: UUID,
+        event: AgentTraceEvent,
+    ) -> None:
+        exists = self._session.scalar(
+            select(ChatTraceEvent.id).where(
+                ChatTraceEvent.run_id == run_id,
+                ChatTraceEvent.sequence == event.sequence,
+            )
+        )
+        if exists is not None:
+            return
+        self._session.add(
+            ChatTraceEvent(
+                run_id=run_id,
+                sequence=event.sequence,
+                event_type=event.event_type,
+                title=event.title,
+                status=event.status,
+                agent_name=event.agent_name,
+                tool_name=event.tool_name,
+                payload=_json_ready(event.payload),
+                duration_ms=event.duration_ms,
+            )
+        )
+        self._session.flush()
+
+    def run_view(
+        self,
+        *,
+        owner_user_id: UUID,
+        run_id: UUID,
+    ) -> ChatRunView | None:
+        run = self._session.scalar(
+            select(ChatRun)
+            .options(selectinload(ChatRun.trace_events))
+            .join(ChatConversation)
+            .where(
+                ChatRun.id == run_id,
+                ChatConversation.owner_user_id == owner_user_id,
+            )
+        )
+        if run is None:
+            return None
+        conversation = (
+            self.detail(
+                owner_user_id=owner_user_id,
+                conversation_id=run.conversation_id,
+            )
+            if run.status == "succeeded"
+            else None
+        )
+        return ChatRunView(
+            id=run.id,
+            conversation_id=run.conversation_id,
+            status=run.status,
+            question=run.question,
+            error=run.error,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            trace_events=tuple(
+                _trace_event_view(event)
+                for event in sorted(
+                    run.trace_events,
+                    key=lambda item: item.sequence,
+                )
+            ),
+            conversation=conversation,
+        )
+
+    def trace_events_after(
+        self,
+        *,
+        owner_user_id: UUID,
+        run_id: UUID,
+        sequence: int,
+    ) -> tuple[ChatTraceEventView, ...] | None:
+        owned_run = self._session.scalar(
+            select(ChatRun.id)
+            .join(ChatConversation)
+            .where(
+                ChatRun.id == run_id,
+                ChatConversation.owner_user_id == owner_user_id,
+            )
+        )
+        if owned_run is None:
+            return None
+        events = self._session.scalars(
+            select(ChatTraceEvent)
+            .where(
+                ChatTraceEvent.run_id == run_id,
+                ChatTraceEvent.sequence > sequence,
+            )
+            .order_by(ChatTraceEvent.sequence)
+        )
+        return tuple(_trace_event_view(event) for event in events)
+
+    def interrupt_active_runs(self) -> int:
+        runs = list(
+            self._session.scalars(
+                select(ChatRun).where(ChatRun.status == "running")
+            )
+        )
+        for run in runs:
+            run.status = "interrupted"
+            run.error = "Application restarted before the agent completed"
+            run.finished_at = utc_now()
+        self._session.flush()
+        return len(runs)
 
     def _owned_conversation(
         self,

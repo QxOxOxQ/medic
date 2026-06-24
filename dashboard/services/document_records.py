@@ -38,9 +38,11 @@ def build_document_record(
         qdrant_error=qdrant_error,
     )
     return DocumentRecord(
+        id=None,
         relative_raw_path=relative_raw_path,
         original_filename=Path(relative_raw_path).name,
         display_name=Path(relative_raw_path).name,
+        byte_size=None,
         raw_exists=raw_exists,
         parsed_markdown_path=parsed_markdown_path,
         parsed_exists=parsed_exists,

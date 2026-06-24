@@ -124,6 +124,19 @@ class _AvailableIndexReader:
         }
 
 
+class _CountingIndexReader(_AvailableIndexReader):
+    def __init__(self, indexed_hashes: set[str]) -> None:
+        super().__init__(indexed_hashes)
+        self.calls = 0
+
+    def indexed_content_hashes(
+        self,
+        content_hashes: set[str],
+    ) -> tuple[set[str], str | None]:
+        self.calls += 1
+        return super().indexed_content_hashes(content_hashes)
+
+
 class _IndexCleanup:
     def delete_content_hash(self, content_hash: str | None) -> QdrantCleanupResult:
         return QdrantCleanupResult(
@@ -175,6 +188,34 @@ def test_document_catalog_marks_documents_indexed_by_content_hash(tmp_path) -> N
     assert qdrant_error is None
     assert records[0].status == "indexed"
     assert records[0].indexed is True
+
+
+def test_document_detail_can_skip_qdrant_for_lazy_artifact_tabs(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    factory = _database_session_factory(tmp_path)
+    owner = _seed_user(factory)
+    _write_file(settings.raw_documents_dir / "report.pdf", b"%PDF-1.4\n")
+    _write_file(settings.parsed_markdown_dir / "report.md", "parsed")
+    _seed_document(factory, owner, status="indexed")
+    with factory() as session:
+        document = DocumentRepository(session).get_by_relative_raw_path("report.pdf")
+        assert document is not None
+        document_id = document.id
+
+    index_reader = _CountingIndexReader({"hash"})
+    record = DocumentCatalog(
+        index_reader=index_reader,
+        database_session_factory=factory,
+    ).record_by_id(
+        settings,
+        owner_user_id=owner.id,
+        document_id=document_id,
+        check_index=False,
+    )
+
+    assert record is not None
+    assert record.status == "indexed"
+    assert index_reader.calls == 0
 
 
 def test_document_storage_upload_accepts_only_new_pdf_files(tmp_path) -> None:

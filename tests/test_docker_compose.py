@@ -42,7 +42,10 @@ def test_dockerfile_installs_rapidocr_native_runtime_libraries() -> None:
 def test_dockerfile_builds_a_minimal_non_root_runtime_image() -> None:
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert " AS builder" in dockerfile
+    assert " AS python-builder" in dockerfile
+    assert "FROM node:24-bookworm-slim AS frontend-builder" in dockerfile
+    assert "npm run build" in dockerfile
+    assert "/app/dashboard/static/dist" in dockerfile
     assert "FROM python:3.12-slim-bookworm AS runtime" in dockerfile
     assert "COPY . ." not in dockerfile
     assert "USER medic:medic" in dockerfile
@@ -50,6 +53,22 @@ def test_dockerfile_builds_a_minimal_non_root_runtime_image() -> None:
     assert "/healthz" in dockerfile
     assert "COPY --chown=medic:medic evaluation" not in dockerfile
     assert "COPY --chown=medic:medic demo_documents" not in dockerfile
+
+
+def test_development_compose_uses_dedicated_uv_image_and_frontend_watcher() -> None:
+    override = (PROJECT_ROOT / "docker-compose.dev.yml").read_text(
+        encoding="utf-8"
+    )
+    makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "image: medic-development:local" in override
+    assert "target: development" in override
+    assert "uv sync --locked --all-extras --no-dev" in override
+    assert "uv run python -m uvicorn" in override
+    assert "image: node:24-bookworm-slim" in override
+    assert "npm ci && npm run dev" in override
+    assert "$(COMPOSE_DEV) up --build" in makefile
+    assert "$(COMPOSE_DEV) build --no-cache app" in makefile
 
 
 def test_dockerignore_excludes_local_and_secret_material() -> None:

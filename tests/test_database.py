@@ -34,6 +34,9 @@ def test_alembic_upgrade_creates_postgres_app_tables(tmp_path) -> None:
         "chat_runs",
         "chat_trace_events",
         "chat_message_sources",
+        "pipeline_runs",
+        "pipeline_run_documents",
+        "pipeline_run_events",
     }.issubset(set(inspector.get_table_names()))
     user_columns = {column["name"] for column in inspector.get_columns("users")}
     assert user_columns >= {

@@ -3,6 +3,8 @@
 .env*
 .idea
 .venv
+node_modules
+dashboard/static/dist
 __pycache__
 .pytest_cache
 .mypy_cache
@@ -13,4 +15,6 @@ data
 docs
 sk-*
 tests
+playwright-report
+test-results
 *.pyc

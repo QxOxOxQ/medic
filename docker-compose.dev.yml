@@ -1,5 +1,9 @@
 services:
   app:
+    image: medic-development:local
+    build:
+      context: .
+      target: development
     environment:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
@@ -8,7 +12,7 @@ services:
       - ./data:/app/data
     command: >
       sh -c "uv sync --locked --all-extras --no-dev &&
-      python -m uvicorn dashboard.app:create_app --factory
+      uv run python -m uvicorn dashboard.app:create_app --factory
       --host 0.0.0.0 --port 8000 --reload
       --reload-dir /app/dashboard
       --reload-dir /app/backend
@@ -16,6 +20,21 @@ services:
       --reload-dir /app/clients
       --reload-dir /app/rag
       --reload-dir /app/tools"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      frontend:
+        condition: service_started
+
+  frontend:
+    image: node:24-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      - frontend_node_modules:/app/node_modules
+    command: >
+      sh -c "npm ci && npm run dev"
 
 volumes:
   app_venv:
+  frontend_node_modules:

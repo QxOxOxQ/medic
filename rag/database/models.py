@@ -22,7 +22,21 @@ from sqlalchemy.types import Uuid
 
 DOCUMENT_STATUSES = ("raw", "prepared", "indexed", "failed", "stale")
 CHAT_MESSAGE_ROLES = ("user", "assistant")
-CHAT_RUN_STATUSES = ("running", "succeeded", "failed")
+CHAT_RUN_STATUSES = ("running", "succeeded", "failed", "interrupted")
+PIPELINE_RUN_STATUSES = (
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "interrupted",
+)
+PIPELINE_DOCUMENT_STATUSES = (
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "skipped",
+)
 
 
 class Base(DeclarativeBase):
@@ -57,6 +71,7 @@ class User(Base):
     chat_conversations: Mapped[list[ChatConversation]] = relationship(
         back_populates="owner",
     )
+    pipeline_runs: Mapped[list[PipelineRun]] = relationship(back_populates="owner")
 
 
 class Document(Base):
@@ -235,7 +250,7 @@ class ChatRun(Base):
     __tablename__ = "chat_runs"
     __table_args__ = (
         CheckConstraint(
-            "status in ('running', 'succeeded', 'failed')",
+            "status in ('running', 'succeeded', 'failed', 'interrupted')",
             name="ck_chat_runs_status",
         ),
         Index("ix_chat_runs_conversation_id", "conversation_id"),
@@ -369,3 +384,140 @@ class ChatMessageSource(Base):
 
     message: Mapped[ChatMessage] = relationship(back_populates="sources")
     run: Mapped[ChatRun] = relationship(back_populates="sources")
+
+
+class PipelineRun(Base):
+    __tablename__ = "pipeline_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('queued', 'running', 'succeeded', 'failed', 'interrupted')",
+            name="ck_pipeline_runs_status",
+        ),
+        Index("ix_pipeline_runs_owner_user_id", "owner_user_id"),
+        Index("ix_pipeline_runs_status", "status"),
+        Index("ix_pipeline_runs_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    owner_user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    summary: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    owner: Mapped[User] = relationship(back_populates="pipeline_runs")
+    documents: Mapped[list[PipelineRunDocument]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="PipelineRunDocument.position",
+    )
+    events: Mapped[list[PipelineRunEvent]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="PipelineRunEvent.sequence",
+    )
+
+
+class PipelineRunDocument(Base):
+    __tablename__ = "pipeline_run_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('queued', 'running', 'succeeded', 'failed', 'skipped')",
+            name="ck_pipeline_run_documents_status",
+        ),
+        UniqueConstraint(
+            "run_id",
+            "position",
+            name="uq_pipeline_run_documents_position",
+        ),
+        Index("ix_pipeline_run_documents_run_id", "run_id"),
+        Index("ix_pipeline_run_documents_document_id", "document_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    document_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    document_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    relative_raw_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    current_step: Mapped[str | None] = mapped_column(String(32))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    run: Mapped[PipelineRun] = relationship(back_populates="documents")
+    document: Mapped[Document | None] = relationship()
+
+
+class PipelineRunEvent(Base):
+    __tablename__ = "pipeline_run_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "sequence",
+            name="uq_pipeline_run_events_sequence",
+        ),
+        Index("ix_pipeline_run_events_run_id", "run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    step: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    counters: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    result: Mapped[dict[str, object]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    run: Mapped[PipelineRun] = relationship(back_populates="events")

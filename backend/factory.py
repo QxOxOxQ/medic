@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from agents.graph import AgentGraph
 from agents.observability import AgentObservability
 from agents.trace import AgentTraceRecorder
+from agents.trace import AgentTraceSink
 from backend.chat_use_cases import ChatConversationUseCase
-from backend.use_cases import AgentRunnerFactory, AnswerQuestionUseCase
+from backend.use_cases import AnswerQuestionUseCase
 from clients.chat_models import ChatModelFactory, get_chat_model_settings
 from rag.retrieval import RetrievalService
 from observability import build_agent_observability
@@ -50,17 +51,41 @@ def build_agent_runner_factory(
     database_session_factory: sessionmaker[Session],
     retriever: RetrievalService | None = None,
     observability: AgentObservability | None = None,
-) -> AgentRunnerFactory:
+) -> DefaultAgentRunnerFactory:
     resolved_retriever = retriever or RetrievalService(
         database_session_factory=database_session_factory
     )
     resolved_observability = observability or build_agent_observability()
-    return lambda owner_user_id, retrieval_limit: _build_agent_graph(
+    return DefaultAgentRunnerFactory(
         retriever=resolved_retriever,
-        owner_user_id=owner_user_id,
-        retrieval_limit=retrieval_limit,
         observability=resolved_observability,
     )
+
+
+class DefaultAgentRunnerFactory:
+    def __init__(
+        self,
+        *,
+        retriever: RetrievalService,
+        observability: AgentObservability,
+    ) -> None:
+        self._retriever = retriever
+        self._observability = observability
+
+    def __call__(
+        self,
+        *,
+        owner_user_id: UUID,
+        retrieval_limit: int,
+        trace_sink: AgentTraceSink | None = None,
+    ) -> AgentGraph:
+        return _build_agent_graph(
+            retriever=self._retriever,
+            owner_user_id=owner_user_id,
+            retrieval_limit=retrieval_limit,
+            observability=self._observability,
+            trace_sink=trace_sink,
+        )
 
 
 def _build_agent_graph(
@@ -69,10 +94,11 @@ def _build_agent_graph(
     owner_user_id: UUID,
     retrieval_limit: int,
     observability: AgentObservability,
+    trace_sink: AgentTraceSink | None = None,
 ) -> AgentGraph:
     chat_settings = get_chat_model_settings()
     source_ledger = SourceLedger()
-    trace_recorder = AgentTraceRecorder()
+    trace_recorder = AgentTraceRecorder(trace_sink)
     rag_tool = RagSearchTool(
         retriever=retriever,
         owner_user_id=owner_user_id,

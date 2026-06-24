@@ -5,7 +5,8 @@ A RAG pipeline for preparing PDF documents, indexing them in Qdrant, and asking 
 ## Requirements
 
 - Docker and Docker Compose for the packaged application workflow.
-- `uv` and Python 3.12+ for local CLI development outside Docker.
+- `uv` 0.11.24 and Python 3.12+ for local CLI development outside Docker.
+- Node.js 24 LTS for frontend development outside Docker.
 - A reachable PostgreSQL database, provided by Docker Compose for local runs.
 - A remote or hosted Qdrant deployment.
 - An OpenRouter API key for model calls.
@@ -133,6 +134,35 @@ MEDIC_DASHBOARD_COOKIE_SECURE=true
 If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
 
+### OCI GitHub Actions runner service
+
+Install the already configured self-hosted runner as a `systemd` service so it
+starts after VM reboots and remains available after the SSH session closes:
+
+```bash
+cd /opt/github-actions-runner
+sudo ./svc.sh install opc
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+Confirm that the service is enabled and active:
+
+```bash
+sudo systemctl is-enabled "$(cat .service)"
+sudo systemctl is-active "$(cat .service)"
+```
+
+Use the generated service name to inspect recent logs:
+
+```bash
+sudo journalctl -u "$(cat .service)" --no-pager -n 100
+```
+
+`./run.sh` starts the runner interactively and stops when its terminal or SSH
+session ends. Use it only for temporary diagnostics, not for production
+deployments.
+
 ### Langfuse application tracing
 
 Set valid `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and
@@ -184,6 +214,29 @@ Login is verified in PostgreSQL. `main.py setup` creates the admin user from tho
 
 The dashboard is English-only. There is no language selector and agent answers are requested in English.
 
+The primary dashboard is a Preact/TypeScript application with these workspaces:
+
+- `Overview` — health, workflow, latest pipeline run and latest conversation.
+- `Documents` — upload, server-side pagination, filters, bulk actions and
+  markdown/chunk/index inspectors.
+- `Pipeline` — persistent run history and live SSE progress.
+- `Assistant` — asynchronous agent runs, live trace and source verification.
+- `Retrieval` — direct inspection of ranked Qdrant results.
+- `Admin` — SQLAdmin for authorized administrators.
+
+The previous server-rendered dashboard remains temporarily available at
+`http://127.0.0.1:8000/legacy` as a migration fallback.
+
+API contracts are defined with Pydantic and exported through OpenAPI. Regenerate
+the checked-in TypeScript schema after changing a contract:
+
+```bash
+npm run api:types
+```
+
+The detailed architecture and rollout criteria are documented in
+[`docs/ui-ux-implementation-plan.md`](docs/ui-ux-implementation-plan.md).
+
 ### Admin SQL dashboard
 
 Admin users can open the SQLAdmin panel at:
@@ -200,7 +253,8 @@ do not automatically update local PDF files, markdown files, or Qdrant points.
 
 ## Docker Development Mode
 
-For day-to-day work, use the development override. Code is mounted into the container, so Python, HTML, JS, and CSS changes are visible without rebuilding the image:
+For day-to-day work, use the development override. Python runs with Uvicorn
+reload and the Node.js 24 service rebuilds Vite assets in watch mode:
 
 ```bash
 make dev-build
@@ -212,7 +266,9 @@ For later starts after ordinary code changes:
 make dev
 ```
 
-After changes to `pyproject.toml`, `uv.lock`, `Dockerfile`, or image configuration, rebuild the container:
+`make dev` performs a cached build so it cannot accidentally reuse the packaged
+runtime image. After changes to `pyproject.toml`, `uv.lock`, `Dockerfile`, or
+image configuration, force a clean development image rebuild:
 
 ```bash
 make dev-build
@@ -341,5 +397,12 @@ make verify
 ```
 
 This runs Ruff, project-wide strict mypy, and pytest. Default tests do not
-require live OpenRouter, live Qdrant, or live PostgreSQL. Run integration tests
+require live OpenRouter, live Qdrant, or live PostgreSQL. It also runs TypeScript
+type checking, Vitest, and the production Vite build. Run integration tests
 against external services only after setting the required environment variables.
+
+Browser accessibility and responsive checks require a running dashboard:
+
+```bash
+npm run test:e2e
+```

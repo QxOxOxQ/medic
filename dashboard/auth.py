@@ -21,6 +21,12 @@ from rag.database.repositories import UserRepository
 
 SESSION_COOKIE_NAME = "medic_dashboard_session"
 SESSION_TTL_SECONDS = 12 * 60 * 60
+AUTH_ENV_NAMES = {
+    "username": "MEDIC_DASHBOARD_USERNAME",
+    "password": "MEDIC_DASHBOARD_PASSWORD",
+    "session_secret": "MEDIC_SESSION_SECRET",
+    "cookie_secure": "MEDIC_DASHBOARD_COOKIE_SECURE",
+}
 
 
 @dataclass(frozen=True)
@@ -56,22 +62,17 @@ def load_auth_settings() -> AuthSettings:
     def lookup(name: str) -> str | None:
         return os.getenv(name) or dotenv_settings.get(name)
 
-    required_names = [
-        "MEDIC_DASHBOARD_USERNAME",
-        "MEDIC_DASHBOARD_PASSWORD",
-        "MEDIC_SESSION_SECRET",
-        "MEDIC_DASHBOARD_COOKIE_SECURE",
-    ]
+    required_names = list(AUTH_ENV_NAMES.values())
     missing = [name for name in required_names if not lookup(name)]
     if missing:
         names = ", ".join(missing)
         raise AuthConfigurationError(f"Missing dashboard auth settings: {names}")
 
     return AuthSettings(
-        username=lookup("MEDIC_DASHBOARD_USERNAME") or "",
-        password=lookup("MEDIC_DASHBOARD_PASSWORD") or "",
-        session_secret=lookup("MEDIC_SESSION_SECRET") or "",
-        cookie_secure=_env_flag(lookup("MEDIC_DASHBOARD_COOKIE_SECURE")),
+        username=lookup(AUTH_ENV_NAMES["username"]) or "",
+        password=lookup(AUTH_ENV_NAMES["password"]) or "",
+        session_secret=lookup(AUTH_ENV_NAMES["session_secret"]) or "",
+        cookie_secure=_env_flag(lookup(AUTH_ENV_NAMES["cookie_secure"])),
     )
 
 
