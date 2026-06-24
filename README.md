@@ -114,16 +114,20 @@ runtime environment.
 
 ## Production Compose
 
-`docker-compose.prod.yml` documents the production stack and publishes the
-dashboard on host port `8000`. The public repository only verifies and publishes
-the runtime image. Deployment runs manually from the private
-`QxOxOxQ/medic-deploy` repository so public pull requests cannot reach the
-self-hosted runner.
+`docker-compose.prod.yml` documents the production stack. Caddy is the only
+public entry point on ports `80` and `443`; the dashboard remains internal on
+port `8000`. Caddy obtains and renews the public TLS certificate automatically,
+and the DuckDNS sidecar keeps the IPv4 record current. The public repository
+only verifies and publishes the runtime image. Deployment runs manually from
+the private `QxOxOxQ/medic-deploy` repository so public pull requests cannot
+reach the self-hosted runner.
 
 Keep `/opt/medic/.env` on the OCI host and set at least:
 
 ```env
 MEDIC_IMAGE=ghcr.io/qxoxoxq/medic:sha-...
+MEDIC_DOMAIN=medic-rag-demo.duckdns.org
+DUCKDNS_SUBDOMAINS=medic-rag-demo
 POSTGRES_PASSWORD=replace-with-a-long-random-password
 MEDIC_DATABASE_URL=postgresql+psycopg://medic:replace-with-a-long-random-password@postgres:5432/medic
 OPENROUTER_API_KEY=...
@@ -132,11 +136,22 @@ QdrantApiKey=...
 MEDIC_DASHBOARD_USERNAME=admin
 MEDIC_DASHBOARD_PASSWORD=replace-with-a-long-random-password
 MEDIC_SESSION_SECRET=replace-with-a-long-random-secret
-MEDIC_DASHBOARD_COOKIE_SECURE=true
+```
+
+Store `DUCKDNS_TOKEN` as a `production` environment secret in the private
+deployment repository. Do not commit it or pass it as a command-line argument:
+
+```bash
+gh secret set DUCKDNS_TOKEN --env production -R QxOxOxQ/medic-deploy
 ```
 
 If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
+
+Before the first deployment, open public TCP ports `80` and `443` in both
+Oracle Linux `firewalld` and the OCI Network Security Group. Follow
+[`docs/oci-public-https.md`](docs/oci-public-https.md). Remove any public
+port-`8000` rule after HTTPS verification succeeds.
 
 ### OCI GitHub Actions runner service
 
