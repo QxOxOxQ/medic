@@ -1,4 +1,4 @@
-name: Deploy OCI
+name: Build OCI Image
 
 on:
   pull_request:
@@ -11,10 +11,9 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: deploy-oci-${{ github.ref }}
+  group: build-oci-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -58,19 +57,18 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - verify
-    outputs:
-      image: ${{ steps.metadata.outputs.image }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build runtime image
-        id: metadata
         run: |
           set -euo pipefail
           IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
           IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
-          echo "image=${IMAGE_SHA}" >> "${GITHUB_OUTPUT}"
           touch .aider-secret-sentinel
           docker build --tag "${IMAGE_SHA}" --tag "${IMAGE_LATEST}" .
 
@@ -101,81 +99,3 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
           docker push "${IMAGE_SHA}"
           docker push "${IMAGE_LATEST}"
-
-  deploy:
-    name: Deploy to OCI
-    runs-on: [self-hosted, Linux, X64]
-    needs:
-      - image
-    if: always() && needs.image.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    environment: production
-    env:
-      DEPLOY_IMAGE: ${{ needs.image.outputs.image }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      QDRANT_URL: ${{ secrets.QDRANT_URL }}
-      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      MEDIC_DASHBOARD_USERNAME: ${{ secrets.MEDIC_DASHBOARD_USERNAME }}
-      MEDIC_DASHBOARD_PASSWORD: ${{ secrets.MEDIC_DASHBOARD_PASSWORD }}
-      MEDIC_SESSION_SECRET: ${{ secrets.MEDIC_SESSION_SECRET }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Install production Compose file
-        run: |
-          set -euo pipefail
-          sudo mkdir -p /opt/medic
-          sudo chown "$(id -u):$(id -g)" /opt/medic
-          install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
-          cat > /opt/medic/.env <<EOF
-          POSTGRES_DB=medic
-          POSTGRES_USER=medic
-          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-          OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-          QdrantURL=${QDRANT_URL}
-          QdrantApiKey=${QDRANT_API_KEY}
-          MEDIC_QDRANT_COLLECTION=hybrid_medic_oci_documents
-          MEDIC_DASHBOARD_USERNAME=${MEDIC_DASHBOARD_USERNAME}
-          MEDIC_DASHBOARD_PASSWORD=${MEDIC_DASHBOARD_PASSWORD}
-          MEDIC_SESSION_SECRET=${MEDIC_SESSION_SECRET}
-          MEDIC_DASHBOARD_COOKIE_SECURE=false
-          MEDIC_LANGFUSE_TRACING_ENABLED=false
-          MEDIC_LANGFUSE_CAPTURE_CONTENT=false
-          MEDIC_LANGFUSE_ENVIRONMENT=production
-          EOF
-          chmod 600 /opt/medic/.env
-
-      - name: Bootstrap Docker on runner
-        run: |
-          set -euo pipefail
-          if ! command -v docker >/dev/null 2>&1; then
-            sudo dnf install -y dnf-plugins-core
-            sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
-            sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-          fi
-          sudo systemctl enable --now docker
-          sudo docker version
-          sudo docker compose version
-
-      - name: Deploy image
-        run: |
-          set -euo pipefail
-          cd /opt/medic
-          test -f .env
-          export MEDIC_IMAGE="${DEPLOY_IMAGE}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
-          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml pull
-          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml up -d
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/healthz >/dev/null; then
-              break
-            fi
-            if test "${attempt}" -eq 30; then
-              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
-              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml logs app
-              exit 1
-            fi
-            sleep 2
-          done
-          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
