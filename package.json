@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "api:schema": "UV_CACHE_DIR=/private/tmp/uv-cache uv run python -m scripts.export_openapi",
+    "api:schema": "uv run python -m scripts.export_openapi",
     "api:types": "npm run api:schema && openapi-typescript frontend/shared/api/openapi.json -o frontend/shared/api/schema.d.ts"
   },
   "dependencies": {
