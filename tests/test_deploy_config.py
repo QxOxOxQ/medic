@@ -75,6 +75,7 @@ def test_public_workflow_verifies_and_publishes_without_self_hosted_deploy() -> 
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
     ).read_text(encoding="utf-8")
+    openrouter_api_key_env = SETTINGS["env"]["openrouter_api_key"]
     qdrant_url_env = SETTINGS["env"]["qdrant_url"]
 
     assert "pull_request:" in workflow
@@ -98,7 +99,10 @@ def test_public_workflow_verifies_and_publishes_without_self_hosted_deploy() -> 
     assert "packages: write" in workflow
     assert "runs-on: [self-hosted, Linux, X64]" not in workflow
     assert "environment: production" not in workflow
-    assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" not in workflow
+    assert (
+        f"{openrouter_api_key_env}: "
+        f"${{{{ secrets.{openrouter_api_key_env} }}}}"
+    ) not in workflow
     assert f"{qdrant_url_env}=${{QDRANT_URL}}" not in workflow
     assert "ssh " not in workflow
     assert "scp " not in workflow
