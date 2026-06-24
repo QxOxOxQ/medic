@@ -114,9 +114,13 @@ runtime environment.
 
 ## Production Compose
 
-`docker-compose.prod.yml` is the OCI runner deployment file used by the GitHub
-Actions workflow. It publishes the dashboard on host port `8000`. Keep
-`/opt/medic/.env` on the host and set at least:
+`docker-compose.prod.yml` documents the production stack and publishes the
+dashboard on host port `8000`. The public repository only verifies and publishes
+the runtime image. Deployment runs manually from the private
+`QxOxOxQ/medic-deploy` repository so public pull requests cannot reach the
+self-hosted runner.
+
+Keep `/opt/medic/.env` on the OCI host and set at least:
 
 ```env
 MEDIC_IMAGE=ghcr.io/qxoxoxq/medic:sha-...
@@ -135,6 +139,10 @@ If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
 
 ### OCI GitHub Actions runner service
+
+Register the runner against the private `QxOxOxQ/medic-deploy` repository, not
+this public repository. Trigger its **Deploy OCI** workflow manually and provide
+the immutable image tag produced here, for example `sha-<40-character-commit>`.
 
 Install the already configured self-hosted runner as a `systemd` service so it
 starts after VM reboots and remains available after the SSH session closes:

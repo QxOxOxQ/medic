@@ -71,7 +71,7 @@ def test_ci_workflow_configures_qdrant_for_quality_tests() -> None:
     assert "bash scripts/smoke_runtime_image.sh medic:test" in workflow
 
 
-def test_deploy_workflow_verifies_before_push_and_oci_deploy() -> None:
+def test_public_workflow_verifies_and_publishes_without_self_hosted_deploy() -> None:
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
     ).read_text(encoding="utf-8")
@@ -89,30 +89,21 @@ def test_deploy_workflow_verifies_before_push_and_oci_deploy() -> None:
         "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
         "&& github.ref == 'refs/heads/main'"
     ) in workflow
-    assert "always() && needs.image.result == 'success'" in workflow
     assert "MEDIC_RUN_LIVE_EVALUATION" not in workflow
     assert "evaluation-bootstrap-dataset" not in workflow
     assert "evaluation-calibrate" not in workflow
     assert "main.py evaluate" not in workflow
     assert "docker push \"${IMAGE_SHA}\"" in workflow
     assert "docker push \"${IMAGE_LATEST}\"" in workflow
-    assert "runs-on: [self-hosted, Linux, X64]" in workflow
-    assert "install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml" in workflow
-    assert "cat > /opt/medic/.env <<EOF" in workflow
-    assert "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" in workflow
-    assert f"{qdrant_url_env}=${{QDRANT_URL}}" in workflow
-    assert "chmod 600 /opt/medic/.env" in workflow
-    assert "test -f .env" in workflow
+    assert "packages: write" in workflow
+    assert "runs-on: [self-hosted, Linux, X64]" not in workflow
+    assert "environment: production" not in workflow
+    assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" not in workflow
+    assert f"{qdrant_url_env}=${{QDRANT_URL}}" not in workflow
     assert "ssh " not in workflow
     assert "scp " not in workflow
     assert "docker login \"${REGISTRY}\"" in workflow
-    assert "docker compose -f docker-compose.prod.yml pull" in workflow
-    assert "docker compose -f docker-compose.prod.yml up -d" in workflow
-    assert "for attempt in $(seq 1 30); do" in workflow
-    assert "curl -fsS http://127.0.0.1:8000/healthz" in workflow
-    assert 'if test "${attempt}" -eq 30; then' in workflow
-    assert "docker compose -f docker-compose.prod.yml logs app" in workflow
-    assert "sleep 2" in workflow
+    assert "docker compose -f docker-compose.prod.yml" not in workflow
 
 
 def test_evaluation_workflow_runs_independently_on_demand() -> None:
