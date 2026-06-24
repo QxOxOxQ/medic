@@ -40,7 +40,10 @@ class SystemFingerprintCalculator:
                 "provider": self._chat_settings.provider,
                 "model": self._chat_settings.model,
                 "temperature": self._chat_settings.temperature,
-                "max_tool_iterations": self._chat_settings.max_tool_iterations,
+                "max_retrieval_queries": (
+                    self._chat_settings.max_retrieval_queries
+                ),
+                "max_consultations": self._chat_settings.max_consultations,
                 "max_review_rounds": self._chat_settings.max_review_rounds,
                 "retrieval_limit": profile.retrieval_limit,
                 "agent_prompt_version": self._agent_prompt_version,

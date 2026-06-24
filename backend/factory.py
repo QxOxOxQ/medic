@@ -14,7 +14,7 @@ from clients.chat_models import ChatModelFactory, get_chat_model_settings
 from rag.retrieval import RetrievalService
 from observability import build_agent_observability
 from rag.database.chat_store import SqlAlchemyChatConversationStore
-from tools import RagSearchTool, SourceLedger
+from tools import ObservedRagSearchPort, RagSearchTool, SourceLedger
 
 
 def build_answer_question_use_case(
@@ -108,9 +108,13 @@ def _build_agent_graph(
     )
     return AgentGraph(
         chat_model=ChatModelFactory().create(chat_settings),
-        tools=[rag_tool.to_langchain_tool()],
-        source_ledger=source_ledger,
-        max_tool_iterations=chat_settings.max_tool_iterations,
+        search_port=ObservedRagSearchPort(
+            tool=rag_tool,
+            observability=observability,
+            agent_name="professor",
+        ),
+        max_retrieval_queries=chat_settings.max_retrieval_queries,
+        max_consultations=chat_settings.max_consultations,
         max_review_rounds=chat_settings.max_review_rounds,
         trace_recorder=trace_recorder,
         observability=observability,

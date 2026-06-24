@@ -179,7 +179,10 @@ def _build_evaluation_services(
             "answer_provider": chat_settings.provider,
             "answer_model": chat_settings.model,
             "answer_temperature": str(chat_settings.temperature),
-            "max_tool_iterations": str(chat_settings.max_tool_iterations),
+            "max_retrieval_queries": str(
+                chat_settings.max_retrieval_queries
+            ),
+            "max_consultations": str(chat_settings.max_consultations),
             "max_review_rounds": str(chat_settings.max_review_rounds),
             "judge_provider": resolved.judge_provider,
             "judge_model": resolved.judge_model,

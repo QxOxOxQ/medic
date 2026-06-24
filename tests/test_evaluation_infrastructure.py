@@ -130,8 +130,16 @@ def test_fingerprints_change_with_profile_system_and_judge_configuration(
         }
     )
     profile_calculator = ProfileFingerprintCalculator()
-    chat = ChatModelSettings("openrouter", "deepseek/model", 0.2, 3, 1, {})
-    changed_chat = ChatModelSettings("openrouter", "deepseek/new", 0.2, 3, 1, {})
+    chat = ChatModelSettings("openrouter", "deepseek/model", 0.2, 6, 4, 3, {})
+    changed_chat = ChatModelSettings(
+        "openrouter",
+        "deepseek/new",
+        0.2,
+        6,
+        4,
+        3,
+        {},
+    )
 
     assert profile_calculator.calculate(profile) != profile_calculator.calculate(stricter)
     assert SystemFingerprintCalculator(chat, agent_prompt_version="agents-v1").calculate(

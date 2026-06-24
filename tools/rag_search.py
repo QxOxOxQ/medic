@@ -7,6 +7,8 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
+from agents.observability import AgentObservability
+from agents.models import AgentSource
 from agents.trace import AgentTraceRecorder
 from rag.retrieval import SearchResult
 from tools.source_ledger import SourceLedger
@@ -49,6 +51,30 @@ class RagSearchTool:
 
     def search_user_medical_documents(self, query: str, limit: int | None = None) -> str:
         normalized_query = query.strip()
+        sources = self.search_sources(query=query, limit=limit)
+        if not normalized_query:
+            return json.dumps(
+                {
+                    "query": normalized_query,
+                    "sources": [],
+                    "message": "Empty search query.",
+                }
+            )
+        return json.dumps(
+            {
+                "query": normalized_query,
+                "sources": [source.as_dict() for source in sources],
+            },
+            ensure_ascii=False,
+        )
+
+    def search_sources(
+        self,
+        *,
+        query: str,
+        limit: int | None = None,
+    ) -> tuple[AgentSource, ...]:
+        normalized_query = query.strip()
         bounded_limit = self._bounded_limit(limit)
         if not normalized_query:
             self._record_trace(
@@ -59,13 +85,7 @@ class RagSearchTool:
                     "message": "Empty search query.",
                 },
             )
-            return json.dumps(
-                {
-                    "query": normalized_query,
-                    "sources": [],
-                    "message": "Empty search query.",
-                }
-            )
+            return ()
 
         results = self._retriever.search(
             query=normalized_query,
@@ -85,13 +105,10 @@ class RagSearchTool:
                 "sources": [source.as_dict() for source in sources],
             },
         )
-        return json.dumps(
-            {
-                "query": normalized_query,
-                "sources": [source.as_dict() for source in sources],
-            },
-            ensure_ascii=False,
-        )
+        return sources
+
+    def sources(self) -> tuple[AgentSource, ...]:
+        return self._source_ledger.sources()
 
     def to_langchain_tool(self) -> StructuredTool:
         default_limit = self._default_limit
@@ -127,3 +144,30 @@ class RagSearchTool:
             tool_name=self.name,
             payload=payload,
         )
+
+
+class ObservedRagSearchPort:
+    def __init__(
+        self,
+        *,
+        tool: RagSearchTool,
+        observability: AgentObservability,
+        agent_name: str,
+    ) -> None:
+        self._tool = tool
+        self._observability = observability
+        self._agent_name = agent_name
+        self._langchain_tool = tool.to_langchain_tool()
+
+    def search_sources(self, *, query: str) -> tuple[AgentSource, ...]:
+        config = self._observability.tool_config(
+            agent_name=self._agent_name,
+            tool_name=self._langchain_tool.name,
+        )
+        if config is None:
+            return self._tool.search_sources(query=query)
+        self._langchain_tool.invoke({"query": query}, config=config)
+        return self._tool.sources()
+
+    def sources(self) -> tuple[AgentSource, ...]:
+        return self._tool.sources()

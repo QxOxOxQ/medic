@@ -188,7 +188,7 @@ class LangfuseAgentObservability:
 def build_agent_observability(
     *,
     settings: LangfuseTracingSettings | None = None,
-    prompt_version: str = "agents-v1",
+    prompt_version: str = "agents-v2",
 ) -> AgentObservability:
     resolved = settings or load_langfuse_tracing_settings()
     if not resolved.enabled or resolved.sample_rate == 0.0:

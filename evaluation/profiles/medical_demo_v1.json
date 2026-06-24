@@ -4,7 +4,7 @@
   "dataset_name": "medic/medical-demo-v1",
   "retrieval_limit": 5,
   "gate_version": "medical-demo-gate-v1",
-  "agent_prompt_version": "agents-v1",
+  "agent_prompt_version": "agents-v2",
   "document_paths": [
     "demo_documents/synthetic_acl_rehab_demo.pdf",
     "demo_documents/synthetic_psoriasis_treatment_demo.pdf",

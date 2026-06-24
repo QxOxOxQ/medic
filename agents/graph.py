@@ -1,40 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_core.messages.tool import ToolCall, ToolMessage
-from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
 
+from agents.contracts import (
+    CompletedConsultation,
+    ResearchPlan,
+    ReviewDecision,
+    ReviewOutcome,
+    SpecialistTask,
+)
+from agents.model_gateway import AgentModelGateway
 from agents.models import (
     AgentAnswer,
     AgentExecutionError,
     AgentRequest,
+    AgentSource,
     UnknownAgentError,
 )
 from agents.observability import AgentObservability, NullAgentObservability
-from agents.profiles import AgentProfile, AgentRegistry
-from agents.trace import AgentTraceRecorder
-from tools.source_ledger import SourceLedger
-
-
-AGENT_PROMPT_VERSION = "agents-v1"
-
-
-INSUFFICIENT_CONTEXT_ANSWER = (
-    "I could not find enough context in the documentation to prepare a "
-    "source-grounded answer."
+from agents.ports import MedicalDocumentSearchPort
+from agents.professor import (
+    MedicalContextCollector,
+    ProfessorResearchPlanner,
+    ProfessorReviewer,
+    ProfessorSynthesizer,
+    ProfessorTaskPlanner,
 )
+from agents.profiles import AgentRegistry
+from agents.specialists import SpecialistDispatcher
+from agents.trace import AgentTraceRecorder
 
 
-@dataclass(frozen=True)
-class SpecialistAnswer:
-    agent_name: str
-    answer: str
-    insufficient_context: bool
+AGENT_PROMPT_VERSION = "agents-v2"
 
 
 class AgentGraph:
@@ -42,28 +39,59 @@ class AgentGraph:
         self,
         *,
         chat_model: BaseChatModel,
-        tools: list[BaseTool],
-        source_ledger: SourceLedger,
-        max_tool_iterations: int,
-        max_review_rounds: int = 0,
+        search_port: MedicalDocumentSearchPort,
+        max_retrieval_queries: int = 6,
+        max_consultations: int = 4,
+        max_review_rounds: int = 3,
         registry: AgentRegistry | None = None,
         trace_recorder: AgentTraceRecorder | None = None,
         observability: AgentObservability | None = None,
     ) -> None:
-        self._registry = registry or AgentRegistry()
-        self._tools = tools
-        self._tools_by_name = {tool.name: tool for tool in tools}
-        self._source_ledger = source_ledger
-        self._max_tool_iterations = max_tool_iterations
-        self._max_review_rounds = max_review_rounds
-        self._plain_model = chat_model
-        self._tool_model = chat_model.bind_tools(self._tools)
-        self._required_tool_model = chat_model.bind_tools(
-            self._tools,
-            tool_choice=self._required_tool_choice(),
+        _validate_limits(
+            max_retrieval_queries=max_retrieval_queries,
+            max_consultations=max_consultations,
+            max_review_rounds=max_review_rounds,
         )
+        self._registry = registry or AgentRegistry()
+        self._max_consultations = max_consultations
+        self._max_review_rounds = max_review_rounds
         self._trace_recorder = trace_recorder or AgentTraceRecorder()
         self._observability = observability or NullAgentObservability()
+
+        model_gateway = AgentModelGateway(
+            chat_model=chat_model,
+            observability=self._observability,
+            trace_recorder=self._trace_recorder,
+        )
+        self._research_planner = ProfessorResearchPlanner(
+            model_gateway=model_gateway,
+            professor_prompt=self._registry.professor_prompt,
+            max_initial_queries=min(4, max_retrieval_queries),
+        )
+        self._context_collector = MedicalContextCollector(
+            search_port=search_port,
+            trace_recorder=self._trace_recorder,
+            max_queries=max_retrieval_queries,
+        )
+        self._task_planner = ProfessorTaskPlanner(
+            model_gateway=model_gateway,
+            professor_prompt=self._registry.professor_prompt,
+            registry=self._registry,
+        )
+        self._dispatcher = SpecialistDispatcher(
+            model_gateway=model_gateway,
+            registry=self._registry,
+            trace_recorder=self._trace_recorder,
+        )
+        self._reviewer = ProfessorReviewer(
+            model_gateway=model_gateway,
+            professor_prompt=self._registry.professor_prompt,
+            registry=self._registry,
+        )
+        self._synthesizer = ProfessorSynthesizer(
+            model_gateway=model_gateway,
+            professor_prompt=self._registry.professor_prompt,
+        )
 
     def answer(self, request: AgentRequest) -> AgentAnswer:
         with self._observability.trace(request):
@@ -71,22 +99,8 @@ class AgentGraph:
 
     def _answer(self, request: AgentRequest) -> AgentAnswer:
         try:
-            profiles = self._select_profiles(request)
-            specialist_answers = [
-                self._run_specialist(profile, request) for profile in profiles
-            ]
-            specialist_answers = self._review_specialists(
-                profiles,
-                request,
-                specialist_answers,
-            )
-            answer, insufficient_context = self._synthesize_answer(
-                request,
-                specialist_answers=specialist_answers,
-            )
-        except AgentExecutionError:
-            raise
-        except UnknownAgentError:
+            result = self._coordinate(request)
+        except (AgentExecutionError, UnknownAgentError):
             raise
         except Exception as error:
             self._trace_recorder.record(
@@ -97,446 +111,378 @@ class AgentGraph:
             )
             raise AgentExecutionError("Agent execution failed") from error
 
-        result = AgentAnswer(
-            answer=answer,
-            agents=tuple(profile.name for profile in profiles),
-            sources=self._source_ledger.sources(),
-            insufficient_context=insufficient_context,
-            trace_events=self._trace_recorder.events(),
-        )
         self._observability.complete(result)
         return result
 
-    def _select_profiles(self, request: AgentRequest) -> tuple[AgentProfile, ...]:
-        profiles = self._registry.select_many(
-            question=request.question,
-            requested_agent=request.requested_agent,
-        )
-        self._trace_recorder.record(
-            event_type="coordinator",
-            title="Coordinator selected specialists",
-            status="succeeded",
-            agent_name="coordinator",
-            payload={
-                "requested_agent": request.requested_agent,
-                "selected_agents": [profile.name for profile in profiles],
-            },
-        )
-        return profiles
-
-    def _run_specialist(
-        self,
-        profile: AgentProfile,
-        request: AgentRequest,
-        *,
-        feedback: str | None = None,
-    ) -> SpecialistAnswer:
-        self._trace_recorder.record(
-            event_type="agent",
-            title=f"{profile.display_name} started",
-            status="running",
-            agent_name=profile.name,
-        )
-        messages = _to_langchain_messages(
-            profile.build_messages(
-                question=request.question,
-                conversation_context=_conversation_context(request),
+    def _coordinate(self, request: AgentRequest) -> AgentAnswer:
+        if request.requested_agent is not None:
+            self._registry.canonical_name(request.requested_agent)
+        research_plan = self._research_planner.plan(request)
+        sources = self._initial_sources(research_plan)
+        if self._requires_no_consultation(research_plan, sources):
+            return self._direct_professor_answer(
+                request,
+                research_plan=research_plan,
+                sources=sources,
             )
+
+        tasks = self._task_planner.plan(
+            request,
+            research_plan=research_plan,
+            sources=sources,
         )
-        if feedback:
-            messages.append(HumanMessage(content=_revision_instruction(feedback)))
-        tool_iterations = 0
-        last_ai_message: AIMessage | None = None
-
-        while True:
-            model = self._model_for_iteration(tool_iterations)
-            last_ai_message = self._invoke_model(
-                model,
-                messages,
-                agent_name=profile.name,
-                phase="specialist",
-            )
-            messages.append(last_ai_message)
-
-            if not last_ai_message.tool_calls:
-                break
-            if tool_iterations >= self._max_tool_iterations:
-                break
-
-            messages.extend(
-                self._tool_messages(
-                    last_ai_message.tool_calls,
-                    agent_name=profile.name,
-                )
-            )
-            tool_iterations += 1
-
-        answer = _answer_from_message(last_ai_message)
-        insufficient_context = not answer
-        if insufficient_context:
-            answer = _insufficient_context_answer()
-
-        self._trace_recorder.record(
-            event_type="agent",
-            title=f"{profile.display_name} finished",
-            status="succeeded" if not insufficient_context else "insufficient_context",
-            agent_name=profile.name,
-            payload={
-                "tool_iterations": tool_iterations,
-                "answer_preview": answer[:240],
-            },
+        self._record_coordination(research_plan, tasks=tasks)
+        initial_tasks = tasks[: self._max_consultations]
+        consultations = self._dispatcher.dispatch(
+            request,
+            tasks=initial_tasks,
+            sources=sources,
         )
-        return SpecialistAnswer(
-            agent_name=profile.name,
-            answer=answer,
+        consultations, review_outcome = self._review_loop(
+            request,
+            research_plan=research_plan,
+            consultations=consultations,
+        )
+        final_sources = self._context_collector.sources()
+        answer, insufficient_context = self._synthesizer.synthesize(
+            request,
+            research_plan=research_plan,
+            consultations=consultations,
+            sources=final_sources,
+            review_outcome=review_outcome,
+        )
+        self._record_synthesis(
+            consultations=consultations,
+            sources=final_sources,
             insufficient_context=insufficient_context,
         )
-
-    def _review_specialists(
-        self,
-        profiles: tuple[AgentProfile, ...],
-        request: AgentRequest,
-        specialist_answers: list[SpecialistAnswer],
-    ) -> list[SpecialistAnswer]:
-        if self._max_review_rounds <= 0:
-            return specialist_answers
-
-        answers = list(specialist_answers)
-        profile_by_name = {profile.name: profile for profile in profiles}
-        for _ in range(self._max_review_rounds):
-            all_approved = True
-            for index, current in enumerate(answers):
-                if current.insufficient_context:
-                    continue
-                feedback = self._review_specialist_answer(
-                    profile_by_name[current.agent_name],
-                    request,
-                    current,
-                )
-                if feedback is None:
-                    continue
-                all_approved = False
-                answers[index] = self._run_specialist(
-                    profile_by_name[current.agent_name],
-                    request,
-                    feedback=feedback,
-                )
-            if all_approved:
-                break
-        return answers
-
-    def _review_specialist_answer(
-        self,
-        profile: AgentProfile,
-        request: AgentRequest,
-        specialist_answer: SpecialistAnswer,
-    ) -> str | None:
-        messages = [
-            SystemMessage(content=_review_system_prompt()),
-            HumanMessage(
-                content=_review_user_prompt(
-                    request,
-                    profile=profile,
-                    specialist_answer=specialist_answer,
-                    source_blocks=[
-                        source.prompt_block()
-                        for source in self._source_ledger.sources()
-                    ],
-                )
-            ),
-        ]
-        response = self._invoke_model(
-            self._plain_model,
-            messages,
-            agent_name="coordinator",
-            phase="review",
+        return AgentAnswer(
+            answer=answer,
+            agents=_consulted_profiles(consultations),
+            sources=final_sources,
+            insufficient_context=insufficient_context,
+            trace_events=self._trace_recorder.events(),
         )
-        verdict = _message_content(response).strip()
-        requests_more_work = _review_requests_more_work(verdict)
+
+    def _initial_sources(
+        self,
+        research_plan: ResearchPlan,
+    ) -> tuple[AgentSource, ...]:
+        if research_plan.mode != "record_grounded":
+            return ()
+        return self._context_collector.collect(research_plan.queries)
+
+    @staticmethod
+    def _requires_no_consultation(
+        research_plan: ResearchPlan,
+        sources: tuple[AgentSource, ...],
+    ) -> bool:
+        if research_plan.mode == "clarify":
+            return True
+        return research_plan.mode == "record_grounded" and not sources
+
+    def _direct_professor_answer(
+        self,
+        request: AgentRequest,
+        *,
+        research_plan: ResearchPlan,
+        sources: tuple[AgentSource, ...],
+    ) -> AgentAnswer:
+        self._record_coordination(research_plan, tasks=())
+        review_outcome = ReviewOutcome(
+            decision=None,
+            rounds_completed=0,
+            consultation_budget_exhausted=False,
+            review_budget_exhausted=False,
+        )
+        answer, insufficient_context = self._synthesizer.synthesize(
+            request,
+            research_plan=research_plan,
+            consultations=(),
+            sources=sources,
+            review_outcome=review_outcome,
+        )
+        self._record_synthesis(
+            consultations=(),
+            sources=sources,
+            insufficient_context=insufficient_context,
+        )
+        return AgentAnswer(
+            answer=answer,
+            agents=(),
+            sources=sources,
+            insufficient_context=insufficient_context,
+            trace_events=self._trace_recorder.events(),
+        )
+
+    def _review_loop(
+        self,
+        request: AgentRequest,
+        *,
+        research_plan: ResearchPlan,
+        consultations: tuple[CompletedConsultation, ...],
+    ) -> tuple[tuple[CompletedConsultation, ...], ReviewOutcome]:
+        completed = consultations
+        consultation_calls = len(completed)
+        last_decision: ReviewDecision | None = None
+        budget_exhausted = False
+        review_budget_exhausted = False
+        rounds_completed = 0
+
+        for round_index in range(1, self._max_review_rounds + 1):
+            rounds_completed = round_index
+            last_decision = self._reviewer.review(
+                request,
+                research_plan=research_plan,
+                consultations=completed,
+                sources=self._context_collector.sources(),
+            )
+            self._record_review(last_decision, round_index=round_index)
+            if last_decision.status == "approved":
+                return completed, ReviewOutcome(
+                    decision=last_decision,
+                    rounds_completed=round_index,
+                    consultation_budget_exhausted=budget_exhausted,
+                    review_budget_exhausted=False,
+                )
+            if round_index >= self._max_review_rounds:
+                review_budget_exhausted = True
+                break
+
+            remaining_budget = self._max_consultations - consultation_calls
+            if remaining_budget <= 0:
+                budget_exhausted = True
+                break
+            if last_decision.status == "research":
+                revised, calls = self._apply_research(
+                    request,
+                    consultations=completed,
+                    decision=last_decision,
+                    remaining_budget=remaining_budget,
+                )
+                if calls == 0:
+                    break
+                if calls < len(last_decision.revisions):
+                    budget_exhausted = True
+                completed = revised
+                consultation_calls += calls
+                continue
+            if last_decision.status == "revise":
+                revised, calls = self._apply_revisions(
+                    request,
+                    consultations=completed,
+                    decision=last_decision,
+                    remaining_budget=remaining_budget,
+                )
+                if calls == 0:
+                    break
+                if calls < len(last_decision.revisions):
+                    budget_exhausted = True
+                completed = revised
+                consultation_calls += calls
+                continue
+            if last_decision.status == "consult":
+                next_tasks = last_decision.next_tasks[:remaining_budget]
+                if len(next_tasks) < len(last_decision.next_tasks):
+                    budget_exhausted = True
+                additional = self._dispatcher.dispatch(
+                    request,
+                    tasks=next_tasks,
+                    sources=self._context_collector.sources(),
+                )
+                completed = (*completed, *additional)
+                consultation_calls += len(additional)
+
+        return completed, ReviewOutcome(
+            decision=last_decision,
+            rounds_completed=rounds_completed,
+            consultation_budget_exhausted=budget_exhausted,
+            review_budget_exhausted=review_budget_exhausted,
+        )
+
+    def _apply_research(
+        self,
+        request: AgentRequest,
+        *,
+        consultations: tuple[CompletedConsultation, ...],
+        decision: ReviewDecision,
+        remaining_budget: int,
+    ) -> tuple[tuple[CompletedConsultation, ...], int]:
+        previous_source_ids = {
+            source.id for source in self._context_collector.sources()
+        }
+        sources = self._context_collector.collect(decision.additional_queries)
+        new_source_ids = tuple(
+            source.id for source in sources if source.id not in previous_source_ids
+        )
+        if not new_source_ids:
+            return consultations, 0
+
+        expanded = list(consultations)
+        calls = 0
+        by_task_id = {
+            consultation.task.id: (index, consultation)
+            for index, consultation in enumerate(consultations)
+        }
+        for revision in decision.revisions:
+            if calls >= remaining_budget:
+                break
+            index, current = by_task_id[revision.task_id]
+            if current.revision_count >= 1:
+                continue
+            expanded_task = SpecialistTask(
+                id=current.task.id,
+                profile=current.task.profile,
+                objective=current.task.objective,
+                source_ids=_merge_source_ids(
+                    current.task.source_ids,
+                    new_source_ids,
+                ),
+                response_language=current.task.response_language,
+                independent=current.task.independent,
+            )
+            expanded[index] = self._dispatcher.revise(
+                request,
+                consultation=CompletedConsultation(
+                    task=expanded_task,
+                    report=current.report,
+                    revision_count=current.revision_count,
+                ),
+                instructions=revision.instructions,
+                sources=sources,
+            )
+            calls += 1
+        return tuple(expanded), calls
+
+    def _apply_revisions(
+        self,
+        request: AgentRequest,
+        *,
+        consultations: tuple[CompletedConsultation, ...],
+        decision: ReviewDecision,
+        remaining_budget: int,
+    ) -> tuple[tuple[CompletedConsultation, ...], int]:
+        revised = list(consultations)
+        calls = 0
+        by_task_id = {
+            consultation.task.id: (index, consultation)
+            for index, consultation in enumerate(consultations)
+        }
+        for revision in decision.revisions:
+            if calls >= remaining_budget:
+                break
+            index, current = by_task_id[revision.task_id]
+            if current.revision_count >= 1:
+                continue
+            revised[index] = self._dispatcher.revise(
+                request,
+                consultation=current,
+                instructions=revision.instructions,
+                sources=self._context_collector.sources(),
+            )
+            calls += 1
+        return tuple(revised), calls
+
+    def _record_coordination(
+        self,
+        research_plan: ResearchPlan,
+        *,
+        tasks: tuple[SpecialistTask, ...],
+    ) -> None:
+        self._trace_recorder.record(
+            event_type="coordinator",
+            title="Professor planned specialist consultations",
+            status="succeeded",
+            agent_name="professor",
+            payload={
+                "mode": research_plan.mode,
+                "response_language": research_plan.response_language,
+                "retrieval_queries": list(research_plan.queries),
+                "selected_agents": [task.profile for task in tasks],
+                "tasks": [
+                    {
+                        "id": task.id,
+                        "profile": task.profile,
+                        "objective": task.objective,
+                        "source_ids": list(task.source_ids),
+                        "independent": task.independent,
+                    }
+                    for task in tasks
+                ],
+            },
+        )
+
+    def _record_review(
+        self,
+        decision: ReviewDecision,
+        *,
+        round_index: int,
+    ) -> None:
         self._trace_recorder.record(
             event_type="review",
-            title=f"Coordinator reviewed {profile.display_name}",
-            status="needs_revision" if requests_more_work else "approved",
-            agent_name="coordinator",
+            title="Professor reviewed specialist consultations",
+            status=decision.status,
+            agent_name="professor",
             payload={
-                "reviewed_agent": profile.name,
-                "verdict_preview": verdict[:240],
+                "round": round_index,
+                "issues": list(decision.issues),
+                "revision_task_ids": [
+                    revision.task_id for revision in decision.revisions
+                ],
+                "next_task_ids": [task.id for task in decision.next_tasks],
+                "additional_queries": list(decision.additional_queries),
             },
         )
-        if not requests_more_work:
-            return None
-        return verdict
 
-    def _model_for_iteration(self, tool_iterations: int) -> Runnable[Any, AIMessage]:
-        if tool_iterations == 0:
-            return self._required_tool_model
-        return self._tool_model
-
-    def _invoke_model(
+    def _record_synthesis(
         self,
-        model: Runnable[Any, AIMessage] | BaseChatModel,
-        messages: list[BaseMessage],
         *,
-        agent_name: str,
-        phase: str,
-    ) -> AIMessage:
-        config = self._observability.model_config(
-            agent_name=agent_name,
-            phase=phase,
-        )
-        try:
-            if config is None:
-                response = model.invoke(messages)
-            else:
-                response = model.invoke(messages, config=config)
-        except Exception as error:
-            self._trace_recorder.record(
-                event_type="model_call",
-                title="Model call failed",
-                status="failed",
-                agent_name=agent_name,
-                payload={"phase": phase, "error": str(error)},
-            )
-            raise AgentExecutionError("Agent model call failed") from error
-
-        self._trace_recorder.record(
-            event_type="model_call",
-            title="Model call completed",
-            status="succeeded",
-            agent_name=agent_name,
-            payload={
-                "phase": phase,
-                "message_count": len(messages),
-                "requested_tool_calls": len(getattr(response, "tool_calls", ()) or ()),
-            },
-        )
-        if not isinstance(response, AIMessage):
-            raise AgentExecutionError("Agent model returned an unsupported message")
-        return response
-
-    def _tool_messages(
-        self,
-        tool_calls: list[ToolCall],
-        *,
-        agent_name: str,
-    ) -> list[ToolMessage]:
-        messages: list[ToolMessage] = []
-        for tool_call in tool_calls:
-            name = str(tool_call.get("name", ""))
-            tool = self._tools_by_name.get(name)
-            if tool is None:
-                raise AgentExecutionError(f"Unknown tool requested: {name}")
-
-            args = tool_call.get("args", {})
-            self._trace_recorder.record(
-                event_type="tool_call",
-                title="Tool requested",
-                status="running",
-                agent_name=agent_name,
-                tool_name=name,
-                payload={"args": args if isinstance(args, dict) else {}},
-            )
-            try:
-                config = self._observability.tool_config(
-                    agent_name=agent_name,
-                    tool_name=name,
-                )
-                if config is None:
-                    content = tool.invoke(args)
-                else:
-                    content = tool.invoke(args, config=config)
-            except Exception as error:
-                self._trace_recorder.record(
-                    event_type="tool_call",
-                    title="Tool failed",
-                    status="failed",
-                    agent_name=agent_name,
-                    tool_name=name,
-                    payload={"error": str(error)},
-                )
-                raise AgentExecutionError("Agent tool call failed") from error
-            messages.append(
-                ToolMessage(
-                    content=str(content),
-                    tool_call_id=str(tool_call.get("id", "")),
-                    name=name,
-                )
-            )
-        return messages
-
-    def _synthesize_answer(
-        self,
-        request: AgentRequest,
-        *,
-        specialist_answers: list[SpecialistAnswer],
-    ) -> tuple[str, bool]:
-        sources = self._source_ledger.sources()
-        if not sources:
-            return _insufficient_context_answer(), True
-        if all(answer.insufficient_context for answer in specialist_answers):
-            return _insufficient_context_answer(), True
-
-        messages = [
-            SystemMessage(content=_synthesis_system_prompt()),
-            HumanMessage(
-                content=_synthesis_user_prompt(
-                    request,
-                    specialist_answers=specialist_answers,
-                    source_blocks=[source.prompt_block() for source in sources],
-                )
-            ),
-        ]
-        response = self._invoke_model(
-            self._plain_model,
-            messages,
-            agent_name="coordinator",
-            phase="synthesis",
-        )
-        answer = _message_content(response).strip()
-        insufficient_context = not answer
-        if insufficient_context:
-            answer = _insufficient_context_answer()
-
+        consultations: tuple[CompletedConsultation, ...],
+        sources: tuple[AgentSource, ...],
+        insufficient_context: bool,
+    ) -> None:
         self._trace_recorder.record(
             event_type="synthesis",
-            title="Coordinator synthesized final answer",
-            status="succeeded" if not insufficient_context else "insufficient_context",
-            agent_name="coordinator",
+            title="Professor synthesized final answer",
+            status="insufficient_context" if insufficient_context else "succeeded",
+            agent_name="professor",
             payload={
-                "specialist_count": len(specialist_answers),
+                "consultation_count": len(consultations),
                 "source_count": len(sources),
             },
         )
-        return answer, insufficient_context
-
-    def _required_tool_choice(self) -> str | None:
-        if not self._tools:
-            return None
-        return self._tools[0].name
 
 
-def _to_langchain_messages(messages: list[dict[str, str]]) -> list[BaseMessage]:
-    converted: list[BaseMessage] = []
-    for message in messages:
-        role = message["role"]
-        content = message["content"]
-        if role == "system":
-            converted.append(SystemMessage(content=content))
-        elif role == "user":
-            converted.append(HumanMessage(content=content))
-        else:
-            raise ValueError(f"Unsupported message role: {role}")
-    return converted
+def _consulted_profiles(
+    consultations: tuple[CompletedConsultation, ...],
+) -> tuple[str, ...]:
+    names: list[str] = []
+    for consultation in consultations:
+        if consultation.task.profile not in names:
+            names.append(consultation.task.profile)
+    return tuple(names)
 
 
-def _conversation_context(request: AgentRequest) -> str:
-    lines: list[str] = []
-    for message in request.conversation_messages:
-        label = "User" if message.role == "user" else "Assistant"
-        lines.append(f"{label}: {message.content}")
-    return "\n".join(lines)
+def _merge_source_ids(
+    existing: tuple[str, ...],
+    additional: tuple[str, ...],
+) -> tuple[str, ...]:
+    merged = list(existing)
+    for source_id in additional:
+        if source_id not in merged:
+            merged.append(source_id)
+    return tuple(merged)
 
 
-def _answer_from_message(message: AIMessage | None) -> str:
-    if message is None or message.tool_calls:
-        return ""
-    return _message_content(message).strip()
-
-
-def _message_content(message: BaseMessage) -> str:
-    content = message.content
-    if isinstance(content, str):
-        return content
-    return "".join(_content_part_to_text(part) for part in content)
-
-
-def _content_part_to_text(part: str | dict[str, Any]) -> str:
-    if isinstance(part, str):
-        return part
-    text = part.get("text")
-    if isinstance(text, str):
-        return text
-    return str(part)
-
-
-def _insufficient_context_answer() -> str:
-    return INSUFFICIENT_CONTEXT_ANSWER
-
-
-def _synthesis_system_prompt() -> str:
-    return (
-        "You are the coordinator for a medical-documentation RAG assistant. "
-        "Synthesize specialist notes into one concise answer. Use only the "
-        "provided sources, cite claims inline as [S1], [S2], and state clearly "
-        "when the sources are insufficient."
-    )
-
-
-def _synthesis_user_prompt(
-    request: AgentRequest,
+def _validate_limits(
     *,
-    specialist_answers: list[SpecialistAnswer],
-    source_blocks: list[str],
-) -> str:
-    specialist_block = "\n\n".join(
-        f"{answer.agent_name}: {answer.answer}" for answer in specialist_answers
-    )
-    return (
-        "Response language: English\n\n"
-        f"Question:\n{request.question}\n\n"
-        f"Recent conversation:\n{_conversation_context(request) or '-'}\n\n"
-        f"Specialist notes:\n{specialist_block or '-'}\n\n"
-        f"Sources:\n{chr(10).join(source_blocks)}"
-    )
-
-
-REVIEW_APPROVED_TOKEN = "APPROVED"
-
-
-def _review_system_prompt() -> str:
-    return (
-        "You are the coordinator for a medical-documentation RAG assistant and "
-        "the final reviewer of a specialist's draft answer. Review the draft "
-        "strictly. Check that every clinical claim is grounded in the provided "
-        "sources and cited as [S1], [S2], that the assessment is realistic and "
-        "complete, that doubts or conflicting evidence are resolved, and that "
-        "no red flag is missed. "
-        f"If the draft is complete and trustworthy, reply with exactly "
-        f"{REVIEW_APPROVED_TOKEN} and nothing else. Otherwise reply with "
-        "concise, specific instructions telling the specialist what to fix, "
-        "which claims need grounding, and which additional document searches "
-        "or analysis to perform."
-    )
-
-
-def _review_user_prompt(
-    request: AgentRequest,
-    *,
-    profile: AgentProfile,
-    specialist_answer: SpecialistAnswer,
-    source_blocks: list[str],
-) -> str:
-    return (
-        f"Specialist under review: {profile.display_name}\n\n"
-        f"User question:\n{request.question}\n\n"
-        f"Specialist draft answer:\n{specialist_answer.answer}\n\n"
-        f"Available sources:\n{chr(10).join(source_blocks) or '-'}"
-    )
-
-
-def _review_requests_more_work(verdict: str) -> bool:
-    normalized = verdict.strip()
-    if not normalized:
-        return False
-    return normalized.upper() != REVIEW_APPROVED_TOKEN
-
-
-def _revision_instruction(feedback: str) -> str:
-    return (
-        "A coordinator reviewed your previous draft and requires revisions "
-        "before it can be accepted. Address every point below. Call "
-        "search_user_medical_documents again with focused queries when more "
-        "evidence is needed, keep claims grounded in the cited sources, and "
-        "produce an improved final answer.\n\n"
-        f"Coordinator feedback:\n{feedback}"
-    )
+    max_retrieval_queries: int,
+    max_consultations: int,
+    max_review_rounds: int,
+) -> None:
+    if max_retrieval_queries < 1:
+        raise ValueError("max_retrieval_queries must be at least 1")
+    if max_consultations < 1:
+        raise ValueError("max_consultations must be at least 1")
+    if max_review_rounds < 1:
+        raise ValueError("max_review_rounds must be at least 1")

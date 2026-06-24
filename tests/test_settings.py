@@ -245,7 +245,11 @@ def test_get_chat_model_settings_reads_provider_agnostic_chat_config(
     assert settings.provider == chat_config["provider"]
     assert settings.model == chat_config["model"]
     assert settings.temperature == chat_config["temperature"]
-    assert settings.max_tool_iterations == chat_config["max_tool_iterations"]
+    assert (
+        settings.max_retrieval_queries
+        == chat_config["max_retrieval_queries"]
+    )
+    assert settings.max_consultations == chat_config["max_consultations"]
     assert settings.max_review_rounds == chat_config["max_review_rounds"]
     assert settings.provider_options["api_key"] == "file-openrouter-key"
     assert (

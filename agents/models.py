@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
+from html import escape
 from uuid import UUID, uuid4
 
 
@@ -41,7 +42,13 @@ class AgentSource:
 
     def prompt_block(self) -> str:
         source = self.document_name or self.source or "unknown"
-        return f"[{self.id}] source: {source}\n{self.excerpt}"
+        return (
+            f'<untrusted_source id="{self.id}">\n'
+            f"source_name: {escape(source)}\n"
+            "content:\n"
+            f"{escape(self.excerpt)}\n"
+            "</untrusted_source>"
+        )
 
 
 @dataclass(frozen=True)

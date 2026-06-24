@@ -17,8 +17,9 @@ def _settings(provider: str = "openrouter") -> ChatModelSettings:
         provider=provider,
         model="openai/gpt-4o-mini",
         temperature=0.2,
-        max_tool_iterations=3,
-        max_review_rounds=1,
+        max_retrieval_queries=6,
+        max_consultations=4,
+        max_review_rounds=3,
         provider_options={
             "api_key": "test-openrouter-key",
             "base_url": "https://openrouter.example/api/v1",

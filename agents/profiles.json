@@ -1,73 +1,33 @@
 {
+  "professor_prompt": "professor.md",
   "system_prompt": "base.md",
-  "default_agent": "cardiometabolic_internist",
   "profiles": [
     {
       "name": "orthopedist",
       "display_name": "Orthopedist",
       "aliases": ["orthopaedist"],
-      "keywords": [
-        "joint",
-        "knee",
-        "hip",
-        "spine",
-        "fracture",
-        "injury",
-        "rehabilitation",
-        "orthopedic",
-        "acl",
-        "effusion"
-      ],
+      "expertise": "Musculoskeletal injuries and disorders, joints, spine, diagnostic imaging, postoperative status, rehabilitation, function, swelling, instability, and orthopedic red flags.",
       "prompt": "orthopedist.md"
     },
     {
       "name": "neurologist",
       "display_name": "Neurologist",
       "aliases": ["neurology"],
-      "keywords": [
-        "neurologic",
-        "neurological",
-        "headache",
-        "migraine",
-        "tremor",
-        "stroke",
-        "sensation",
-        "paresthesia",
-        "seizure"
-      ],
+      "expertise": "Neurological symptoms and examinations, focal deficits, headache, seizures, sensory and motor disorders, neuroimaging, electrophysiology, and acute neurological red flags.",
       "prompt": "neurologist.md"
     },
     {
       "name": "dermatologist",
       "display_name": "Dermatologist",
       "aliases": ["dermatology"],
-      "keywords": [
-        "skin",
-        "psoriasis",
-        "rash",
-        "lesion",
-        "erythema",
-        "dermatology",
-        "phototherapy",
-        "biologic"
-      ],
+      "expertise": "Skin findings and morphology, inflammatory and infectious skin disease, lesions, psoriasis, dermatologic therapies, treatment monitoring, and severe skin-reaction red flags.",
       "prompt": "dermatologist.md"
     },
     {
       "name": "cardiometabolic_internist",
       "display_name": "Cardiometabolic internist",
       "aliases": ["internist", "cardiologist", "cardiometabolic"],
-      "keywords": [
-        "lipid",
-        "cholesterol",
-        "glucose",
-        "blood pressure",
-        "heart",
-        "hypertension",
-        "diabetes",
-        "weight",
-        "metabolic"
-      ],
+      "expertise": "Laboratory interpretation, lipids, glucose, blood pressure, weight, cardiometabolic risk, chronic disease monitoring, medication signals, and renal or hepatic monitoring.",
       "prompt": "cardiometabolic_internist.md"
     }
   ]

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agents.contracts import ConsultationReport, SpecialistTask
 from agents.models import UnknownAgentError
 
 
@@ -19,7 +20,7 @@ class AgentProfile:
     name: str
     display_name: str
     aliases: tuple[str, ...]
-    keywords: tuple[str, ...]
+    expertise: str
     system_prompt: str
     instructions_prompt: str
 
@@ -27,131 +28,73 @@ class AgentProfile:
         normalized = _normalize(value)
         return normalized in {_normalize(name) for name in self._names()}
 
-    def keyword_score(self, question: str) -> int:
-        normalized_question = _normalize(question)
-        return sum(
-            1
-            for keyword in self.keywords
-            if _normalize(keyword) in normalized_question
-        )
-
-    def build_messages(
+    def consultation_prompt(
         self,
         *,
+        task: SpecialistTask,
         question: str,
         conversation_context: str = "",
-    ) -> list[dict[str, str]]:
-        user_prompt = self._user_prompt(
-            question,
+        source_blocks: tuple[str, ...] = (),
+        previous_report: ConsultationReport | None = None,
+        revision_instructions: str | None = None,
+    ) -> str:
+        return _consultation_prompt(
+            task,
+            question=question,
             conversation_context=conversation_context,
+            source_blocks=source_blocks,
+            previous_report=previous_report,
+            revision_instructions=revision_instructions,
         )
-        return [
-            {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": user_prompt},
-        ]
 
     def _names(self) -> tuple[str, ...]:
         return (self.name, self.display_name, *self.aliases)
 
-    def _system_prompt(self) -> str:
+    def system_prompt_text(self) -> str:
         return f"{self.system_prompt}\n\n{self.instructions_prompt}"
-
-    def _user_prompt(
-        self,
-        question: str,
-        conversation_context: str,
-    ) -> str:
-        context_block = ""
-        if conversation_context:
-            context_block = f"\n\nRecent conversation:\n{conversation_context}"
-        return (
-            "Response language: English"
-            f"{context_block}"
-            f"\n\nQuestion:\n{question}"
-        )
-
 
 @dataclass(frozen=True)
 class AgentProfileSet:
     profiles: tuple[AgentProfile, ...]
-    default_agent_name: str
+    professor_prompt: str
 
 
 class AgentRegistry:
     def __init__(
         self,
         profiles: tuple[AgentProfile, ...] | None = None,
-        default_agent_name: str | None = None,
+        professor_prompt: str | None = None,
     ) -> None:
         if profiles is None:
             profile_set = load_profile_set()
             self._profiles = profile_set.profiles
-            self._default_agent_name = (
-                default_agent_name or profile_set.default_agent_name
-            )
+            self._professor_prompt = professor_prompt or profile_set.professor_prompt
             return
 
         self._profiles = profiles
-        self._default_agent_name = default_agent_name or profiles[0].name
+        self._professor_prompt = professor_prompt or ""
+
+    @property
+    def profiles(self) -> tuple[AgentProfile, ...]:
+        return self._profiles
+
+    @property
+    def professor_prompt(self) -> str:
+        return self._professor_prompt
 
     def get(self, name: str) -> AgentProfile:
         for profile in self._profiles:
-            if profile.name == name:
+            if profile.matches(name):
                 return profile
         raise UnknownAgentError(f"Unknown agent: {name}")
 
-    def select(
-        self,
-        *,
-        question: str,
-        requested_agent: str | None,
-    ) -> AgentProfile:
-        if requested_agent:
-            return self._select_requested(requested_agent)
+    def canonical_name(self, name: str) -> str:
+        return self.get(name).name
 
-        scored = [
-            (profile.keyword_score(question), profile)
-            for profile in self._profiles
-        ]
-        best_score, best_profile = max(scored, key=lambda item: item[0])
-        if best_score > 0:
-            return best_profile
-        return self.get(self._default_agent_name)
-
-    def select_many(
-        self,
-        *,
-        question: str,
-        requested_agent: str | None,
-    ) -> tuple[AgentProfile, ...]:
-        if requested_agent:
-            return (self._select_requested(requested_agent),)
-
-        scored = [
-            (profile.keyword_score(question), index, profile)
-            for index, profile in enumerate(self._profiles)
-        ]
-        matching = [
-            item for item in scored
-            if item[0] > 0
-        ]
-        if not matching:
-            if _is_broad_question(question):
-                return self._profiles
-            return (self.get(self._default_agent_name),)
-        return tuple(
-            profile
-            for _, _, profile in sorted(
-                matching,
-                key=lambda item: (-item[0], item[1]),
-            )
+    def expertise_catalog(self) -> str:
+        return "\n".join(
+            f"- {profile.name}: {profile.expertise}" for profile in self._profiles
         )
-
-    def _select_requested(self, requested_agent: str) -> AgentProfile:
-        for profile in self._profiles:
-            if profile.matches(requested_agent):
-                return profile
-        raise UnknownAgentError(f"Unknown agent: {requested_agent}")
 
 
 def load_profiles(
@@ -172,6 +115,7 @@ def load_profile_set(
 ) -> AgentProfileSet:
     raw_config = json.loads(profiles_path.read_text(encoding="utf-8"))
     system_prompt = _read_prompt(prompts_dir, raw_config["system_prompt"])
+    professor_prompt = _read_prompt(prompts_dir, raw_config["professor_prompt"])
     profiles = tuple(
         _profile_from_config(
             raw_profile,
@@ -182,7 +126,7 @@ def load_profile_set(
     )
     return AgentProfileSet(
         profiles=profiles,
-        default_agent_name=raw_config["default_agent"],
+        professor_prompt=professor_prompt,
     )
 
 
@@ -196,7 +140,7 @@ def _profile_from_config(
         name=raw_profile["name"],
         display_name=raw_profile["display_name"],
         aliases=tuple(raw_profile.get("aliases", ())),
-        keywords=tuple(raw_profile.get("keywords", ())),
+        expertise=raw_profile["expertise"],
         system_prompt=system_prompt,
         instructions_prompt=_read_prompt(prompts_dir, raw_profile["prompt"]),
     )
@@ -216,21 +160,40 @@ def _normalize(value: str) -> str:
     )
 
 
-def _is_broad_question(question: str) -> bool:
-    normalized = _normalize(question)
-    broad_terms = (
-        "all",
-        "any",
-        "everything",
-        "overview",
-        "summary",
-        "summarize",
-        "broad",
-        "wszystkie",
-        "wszystko",
-        "calosc",
-        "cala",
-        "podsumuj",
-        "przeglad",
+def _consultation_prompt(
+    task: SpecialistTask,
+    *,
+    question: str,
+    conversation_context: str,
+    source_blocks: tuple[str, ...],
+    previous_report: ConsultationReport | None,
+    revision_instructions: str | None,
+) -> str:
+    previous_block = "-"
+    if previous_report is not None:
+        previous_block = _report_block(previous_report)
+    return (
+        "This is an internal consultation requested by the lead professor. "
+        "Do not address the user directly. Return the requested structured "
+        "consultation report.\n\n"
+        f"Natural-language report language:\n{task.response_language}\n\n"
+        f"Consultation objective:\n{task.objective}\n\n"
+        f"User question:\n{question}\n\n"
+        f"Recent conversation:\n{conversation_context or '-'}\n\n"
+        f"Assigned sources:\n{chr(10).join(source_blocks) or '-'}\n\n"
+        f"Previous version of this report:\n{previous_block}\n\n"
+        f"Professor revision instructions:\n{revision_instructions or '-'}\n\n"
+        "For document-grounded work, use only assigned source IDs in the "
+        "evidence field. If evidence is missing, report the uncertainty and "
+        "propose focused missing_queries instead of inventing facts."
     )
-    return any(term in normalized for term in broad_terms)
+
+
+def _report_block(report: ConsultationReport) -> str:
+    return (
+        f"Findings: {list(report.findings)}\n"
+        f"Evidence: {list(report.evidence)}\n"
+        f"Uncertainties: {list(report.uncertainties)}\n"
+        f"Red flags: {list(report.red_flags)}\n"
+        f"Missing queries: {list(report.missing_queries)}"
+    )

@@ -19,7 +19,8 @@ class ChatModelSettings:
     provider: str
     model: str
     temperature: float
-    max_tool_iterations: int
+    max_retrieval_queries: int
+    max_consultations: int
     max_review_rounds: int
     provider_options: Mapping[str, Any]
 
@@ -40,8 +41,9 @@ def get_chat_model_settings(
         provider=provider,
         model=chat_config["model"],
         temperature=float(chat_config.get("temperature", 0.2)),
-        max_tool_iterations=int(chat_config.get("max_tool_iterations", 3)),
-        max_review_rounds=int(chat_config.get("max_review_rounds", 0)),
+        max_retrieval_queries=int(chat_config.get("max_retrieval_queries", 6)),
+        max_consultations=int(chat_config.get("max_consultations", 4)),
+        max_review_rounds=int(chat_config.get("max_review_rounds", 3)),
         provider_options=_provider_options(
             provider=provider,
             settings=resolved_settings,

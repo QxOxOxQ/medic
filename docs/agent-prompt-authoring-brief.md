@@ -22,15 +22,16 @@ Search results are scoped to the logged-in user. Qdrant provides candidate match
 
 Prompt files live in `agents/prompts/`:
 
+- `professor.md`
 - `base.md`
 - `orthopedist.md`
 - `neurologist.md`
 - `dermatologist.md`
 - `cardiometabolic_internist.md`
 
-Agent profiles and routing metadata live in `agents/profiles.json`. The runtime combines `base.md` with the selected specialist prompt. For broad questions, the coordinator can select multiple specialist profiles and synthesize the final answer.
+Agent profiles and semantic expertise descriptions live in `agents/profiles.json`. The professor uses structured decisions to plan retrieval and assign one or more bounded consultations. The runtime combines `base.md` with the assigned specialist prompt, critically reviews consultation reports, and lets only the professor synthesize the final answer.
 
-The available retrieval tool is `search_user_medical_documents`. The agent may call this tool multiple times with focused, medically meaningful queries. Multiple searches are appropriate when the user's question spans several conditions, documents, specialties, dates, test types, treatments, or risk signals.
+The available retrieval tool is `search_user_medical_documents`. Retrieval is controlled centrally by the professor before delegation and may be extended after review with focused queries. Specialists receive only assigned source excerpts and report missing evidence through structured consultation fields.
 
 The tool returns JSON with source IDs such as `S1`, `S2`, document names, excerpts, scores, content hashes, chunk indexes, character ranges, and retrieval queries. The final answer must use citation markers in exactly this style: `[S1]`, `[S2]`. The dashboard linkifies that citation format.
 

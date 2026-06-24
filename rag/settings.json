@@ -16,8 +16,9 @@
     "provider": "openrouter",
     "model": "deepseek/deepseek-v4-pro",
     "temperature": 0.2,
-    "max_tool_iterations": 3,
-    "max_review_rounds": 1
+    "max_retrieval_queries": 6,
+    "max_consultations": 4,
+    "max_review_rounds": 3
   },
   "embedding": {
     "provider": "openrouter",

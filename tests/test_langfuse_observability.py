@@ -229,8 +229,9 @@ def test_backend_factory_injects_observability_into_agent_graph(
         provider="test",
         model="test-model",
         temperature=0.0,
-        max_tool_iterations=1,
-        max_review_rounds=0,
+        max_retrieval_queries=2,
+        max_consultations=2,
+        max_review_rounds=1,
         provider_options={},
     )
     monkeypatch.setattr("backend.factory.get_chat_model_settings", lambda: settings)
