@@ -388,6 +388,17 @@ def test_professor_routes_from_semantic_plan_after_retrieval() -> None:
     assert "source_name: Knee MRI" in _message_text(task_call)
 
 
+def test_task_plan_prompt_requests_clinical_domain_match() -> None:
+    retriever = RecordingRetriever([_source_result()])
+    model = _standard_model()
+    graph = _graph(chat_model=model, retriever=retriever)
+
+    graph.answer(AgentRequest(question="Co oznacza mój wynik?"))
+
+    task_call = _calls_for(model, TaskPlanPayload)[0]
+    assert "primary clinical domain" in _message_text(task_call)
+
+
 def test_retrieved_document_instructions_are_delimited_as_untrusted() -> None:
     retriever = RecordingRetriever([_injection_result()])
     model = _standard_model()
@@ -705,7 +716,7 @@ def test_professor_does_not_revise_same_report_twice() -> None:
     assert len(_calls_for(model, ConsultationReportPayload)) == 2
 
 
-def test_insufficient_context_uses_review_evidence_assessment() -> None:
+def test_review_evidence_gap_still_answers_from_available_sources() -> None:
     retriever = RecordingRetriever([_source_result()])
     model = ScriptedChatModel(
         structured_responses={
@@ -713,7 +724,7 @@ def test_insufficient_context_uses_review_evidence_assessment() -> None:
             TaskPlanPayload: [_task_plan(_task())],
             ConsultationReportPayload: [
                 _report(
-                    uncertainties=("The excerpt does not answer the question.",),
+                    uncertainties=("The excerpt does not fully answer the question.",),
                 )
             ],
             ReviewDecisionPayload: [
@@ -732,7 +743,7 @@ def test_insufficient_context_uses_review_evidence_assessment() -> None:
             ],
         },
         text_responses=[
-            AIMessage(content="The available excerpt is insufficient [S1].")
+            AIMessage(content="Dostępny rezonans wskazuje wysięk w stawie [S1].")
         ],
     )
     graph = _graph(
@@ -743,7 +754,12 @@ def test_insufficient_context_uses_review_evidence_assessment() -> None:
 
     answer = graph.answer(AgentRequest(question="What surgery was performed?"))
 
-    assert answer.insufficient_context is True
+    assert answer.insufficient_context is False
+    assert answer.answer == "Dostępny rezonans wskazuje wysięk w stawie [S1]."
+    synthesis = next(
+        event for event in answer.trace_events if event.event_type == "synthesis"
+    )
+    assert synthesis.payload["reason"] == "evidence_insufficient"
 
 
 def test_final_answer_retries_unknown_citation() -> None:
@@ -824,6 +840,10 @@ def test_missing_record_context_is_written_by_professor_in_planned_language() ->
     assert answer.answer.startswith("No hay suficiente")
     assert answer.insufficient_context is True
     assert answer.agents == ()
+    synthesis = next(
+        event for event in answer.trace_events if event.event_type == "synthesis"
+    )
+    assert synthesis.payload["reason"] == "no_sources"
     final_call = next(call for call in model.calls if call["kind"] == "text")
     assert "Response language:\nes-AR" in _message_text(final_call)
 

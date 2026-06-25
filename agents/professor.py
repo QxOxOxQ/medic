@@ -71,9 +71,16 @@ class ProfessorResearchPlanner:
             "- return that language as an unrestricted name or BCP-47 tag in "
             "response_language.\n\n"
             "Mode policy:\n"
-            "- record_grounded: the answer requires the user's records;\n"
-            "- general_information: the answer does not depend on records;\n"
-            "- clarify: a safe, useful answer requires a user clarification.\n\n"
+            "- record_grounded: the answer depends on the user's own health, "
+            "body, symptoms, condition, history, results, or documents. Default "
+            "to this whenever the user asks about themselves and their records "
+            "could hold the answer; form retrieval queries and search before "
+            "concluding that anything is missing.\n"
+            "- general_information: a generic medical question that does not "
+            "depend on the user's records;\n"
+            "- clarify: only when the request is too ambiguous to even form a "
+            "retrieval query or to answer safely, and searching the records "
+            "could not resolve it.\n\n"
             "For record_grounded mode, provide concise retrieval queries "
             "covering the user's intent. For other modes, queries must be empty."
             f"\n\nRecent conversation:\n{_conversation_context(request) or '-'}"
@@ -216,7 +223,11 @@ class ProfessorTaskPlanner:
         )
         return (
             "Assign one or two bounded initial specialist consultations. Choose "
-            "profiles by semantic expertise, not keyword matching. Initial tasks "
+            "profiles by semantic expertise, not keyword matching. Match the "
+            "question's primary clinical domain (the affected body system or "
+            "organ, and the type of any imaging or study) to the specialist "
+            "whose expertise covers it; never assign a specialist whose expertise "
+            "does not cover that domain. Initial tasks "
             "are not independent second opinions, so set independent=false. Use "
             "only available source IDs. A record-grounded task must receive "
             "relevant source IDs; a general-information task receives none.\n\n"
@@ -646,8 +657,28 @@ def _final_instruction(
         )
     return (
         "Answer from the available records and consultations, distinguishing "
-        "documented facts, interpretation, and unresolved uncertainty."
+        "documented facts, interpretation, and unresolved uncertainty. When "
+        "relevant records are available, give a grounded answer that cites the "
+        "source IDs; do not withhold it merely because the evidence is "
+        "incomplete — state what is missing instead."
     )
+
+
+def insufficient_reason(
+    research_plan: ResearchPlan,
+    *,
+    sources: tuple[AgentSource, ...],
+    review_outcome: ReviewOutcome,
+) -> str:
+    if research_plan.mode != "record_grounded":
+        return "not_record_grounded"
+    if not sources:
+        return "no_sources"
+    if review_outcome.decision is None:
+        return "review_incomplete"
+    if not review_outcome.decision.evidence_sufficient:
+        return "evidence_insufficient"
+    return "sufficient"
 
 
 def _insufficient_context(
@@ -656,11 +687,14 @@ def _insufficient_context(
     sources: tuple[AgentSource, ...],
     review_outcome: ReviewOutcome,
 ) -> bool:
-    if research_plan.mode != "record_grounded":
-        return False
-    if not sources or review_outcome.decision is None:
-        return True
-    return not review_outcome.decision.evidence_sufficient
+    return (
+        insufficient_reason(
+            research_plan,
+            sources=sources,
+            review_outcome=review_outcome,
+        )
+        == "no_sources"
+    )
 
 
 def _answer_validation_error(

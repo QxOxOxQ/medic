@@ -205,7 +205,7 @@ def _document_metadata(
     return None
 
 
-def _excerpt(content: str, max_length: int = 320) -> str:
+def _excerpt(content: str, max_length: int = 1200) -> str:
     compact = " ".join(content.split())
     if len(compact) <= max_length:
         return compact

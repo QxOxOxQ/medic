@@ -367,6 +367,31 @@ def test_search_results_are_filtered_to_current_user_documents(tmp_path) -> None
     ]
 
 
+def test_search_results_preserve_full_chunk_content(tmp_path) -> None:
+    factory = _database_session_factory(tmp_path)
+    owner = _seed_user(factory)
+    _seed_document(
+        factory,
+        owner,
+        parsed_markdown_path="nested/report.md",
+        content_hash="allowed-hash",
+    )
+    long_content = "Wnioski: " + "knee MRI finding " * 50
+    response = SimpleNamespace(
+        points=[_point("allowed-hash", "report.md", 0.9, long_content)]
+    )
+
+    results = search_results_from_response(
+        response,
+        owner_user_id=owner.id,
+        database_session_factory=factory,
+        limit=10,
+    )
+
+    assert results[0].excerpt == " ".join(long_content.split())
+    assert len(results[0].excerpt) > 320
+
+
 def test_search_results_are_empty_without_database_ownership(tmp_path) -> None:
     response = SimpleNamespace(
         points=[_point("stale-hash", "stale.md", 0.8, "stale content")]

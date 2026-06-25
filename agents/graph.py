@@ -25,6 +25,7 @@ from agents.professor import (
     ProfessorReviewer,
     ProfessorSynthesizer,
     ProfessorTaskPlanner,
+    insufficient_reason,
 )
 from agents.profiles import AgentRegistry
 from agents.specialists import SpecialistDispatcher
@@ -155,6 +156,11 @@ class AgentGraph:
             consultations=consultations,
             sources=final_sources,
             insufficient_context=insufficient_context,
+            reason=insufficient_reason(
+                research_plan,
+                sources=final_sources,
+                review_outcome=review_outcome,
+            ),
         )
         return AgentAnswer(
             answer=answer,
@@ -206,6 +212,11 @@ class AgentGraph:
             consultations=(),
             sources=sources,
             insufficient_context=insufficient_context,
+            reason=insufficient_reason(
+                research_plan,
+                sources=sources,
+                review_outcome=review_outcome,
+            ),
         )
         return AgentAnswer(
             answer=answer,
@@ -440,6 +451,7 @@ class AgentGraph:
         consultations: tuple[CompletedConsultation, ...],
         sources: tuple[AgentSource, ...],
         insufficient_context: bool,
+        reason: str,
     ) -> None:
         self._trace_recorder.record(
             event_type="synthesis",
@@ -449,6 +461,7 @@ class AgentGraph:
             payload={
                 "consultation_count": len(consultations),
                 "source_count": len(sources),
+                "reason": reason,
             },
         )
 
