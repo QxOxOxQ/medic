@@ -762,6 +762,36 @@ def test_review_evidence_gap_still_answers_from_available_sources() -> None:
     assert synthesis.payload["reason"] == "evidence_insufficient"
 
 
+def test_review_failure_still_produces_grounded_answer() -> None:
+    retriever = RecordingRetriever([_source_result()])
+    invalid_review = _review("approved", evidence_sufficient=False)
+    model = ScriptedChatModel(
+        structured_responses={
+            ResearchPlanPayload: [_research_plan()],
+            TaskPlanPayload: [_task_plan(_task())],
+            ConsultationReportPayload: [_report()],
+            ReviewDecisionPayload: [invalid_review, invalid_review],
+        },
+        text_responses=[AIMessage(content="Grounded answer from records [S1].")],
+    )
+    graph = _graph(chat_model=model, retriever=retriever)
+
+    answer = graph.answer(AgentRequest(question="Explain my knee MRI."))
+
+    assert answer.answer == "Grounded answer from records [S1]."
+    assert answer.insufficient_context is False
+    review_failure = next(
+        event
+        for event in answer.trace_events
+        if event.event_type == "review" and event.status == "failed"
+    )
+    assert "review unavailable" in review_failure.title.lower()
+    synthesis = next(
+        event for event in answer.trace_events if event.event_type == "synthesis"
+    )
+    assert synthesis.payload["reason"] == "review_incomplete"
+
+
 def test_final_answer_retries_unknown_citation() -> None:
     retriever = RecordingRetriever([_source_result()])
     model = _standard_model(

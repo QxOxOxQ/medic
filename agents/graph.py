@@ -242,12 +242,18 @@ class AgentGraph:
 
         for round_index in range(1, self._max_review_rounds + 1):
             rounds_completed = round_index
-            last_decision = self._reviewer.review(
-                request,
-                research_plan=research_plan,
-                consultations=completed,
-                sources=self._context_collector.sources(),
-            )
+            try:
+                last_decision = self._reviewer.review(
+                    request,
+                    research_plan=research_plan,
+                    consultations=completed,
+                    sources=self._context_collector.sources(),
+                )
+            except AgentExecutionError as error:
+                self._record_review_failure(round_index=round_index, error=error)
+                last_decision = None
+                review_budget_exhausted = True
+                break
             self._record_review(last_decision, round_index=round_index)
             if last_decision.status == "approved":
                 return completed, ReviewOutcome(
@@ -443,6 +449,20 @@ class AgentGraph:
                 "next_task_ids": [task.id for task in decision.next_tasks],
                 "additional_queries": list(decision.additional_queries),
             },
+        )
+
+    def _record_review_failure(
+        self,
+        *,
+        round_index: int,
+        error: Exception,
+    ) -> None:
+        self._trace_recorder.record(
+            event_type="review",
+            title="Professor review unavailable; answering from gathered evidence",
+            status="failed",
+            agent_name="professor",
+            payload={"round": round_index, "error": str(error)},
         )
 
     def _record_synthesis(
