@@ -44,9 +44,7 @@ def test_production_compose_uses_caddy_without_publishing_app_port() -> None:
     assert "./Caddyfile:/etc/caddy/Caddyfile:ro" in compose
     assert "caddy_data:/data" in compose
     assert "caddy_config:/config" in compose
-    assert "image: \"lscr.io/linuxserver/duckdns@sha256:" in compose
-    assert "DUCKDNS_SUBDOMAINS is required" in compose
-    assert "DUCKDNS_TOKEN is required" in compose
+    assert "duckdns" not in compose
     assert 'MEDIC_DASHBOARD_COOKIE_SECURE: "true"' in compose
     assert 'FORWARDED_ALLOW_IPS: "*"' in compose
     assert "postgres_data:/var/lib/postgresql" in compose

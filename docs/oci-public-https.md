@@ -46,5 +46,5 @@ oci network nsg rules add \
   ]'
 ```
 
-After `https://medic-rag-demo.duckdns.org/healthz` returns HTTP `204`, remove
-the old TCP `8000` ingress rule from the NSG.
+After `https://<MEDIC_DOMAIN>/healthz` returns HTTP `204`, remove the old TCP
+`8000` ingress rule from the NSG.
