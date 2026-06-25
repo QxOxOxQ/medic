@@ -44,6 +44,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("prepare", help="Prepare raw PDF files for later chunking")
     subparsers.add_parser("ingest", help="Prepare and index documents into Qdrant")
+    subparsers.add_parser(
+        "seed-demo",
+        help="Upload and index the synthetic demo PDFs for the dashboard admin user",
+    )
     evaluate_parser = subparsers.add_parser(
         "evaluate",
         help="Run a blocking RAG quality evaluation",
@@ -68,6 +72,42 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_seed_demo() -> int:
+    import os
+
+    from dotenv import dotenv_values
+
+    from dashboard.services.demo_seeder import DemoSeedError, seed_demo_documents
+    from rag.config import PROJECT_ROOT
+    from rag.database import get_session_factory
+
+    dotenv_settings = dotenv_values(PROJECT_ROOT / ".env")
+    admin_username = os.getenv("MEDIC_DASHBOARD_USERNAME") or dotenv_settings.get(
+        "MEDIC_DASHBOARD_USERNAME"
+    )
+    if not admin_username:
+        print(
+            json.dumps(
+                {
+                    "status": "failed_error",
+                    "error": "MEDIC_DASHBOARD_USERNAME is required",
+                }
+            )
+        )
+        return 2
+    try:
+        summary = seed_demo_documents(
+            admin_username=admin_username,
+            database_session_factory=get_session_factory(),
+            documents_dir=PROJECT_ROOT / "demo_documents",
+        )
+    except DemoSeedError as error:
+        print(json.dumps({"status": "failed_error", "error": str(error)}))
+        return 2
+    print(summary.as_report_line())
+    return 1 if summary.pipeline_failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_logging()
     parser = _build_parser()
@@ -90,6 +130,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         ingestion_summary = FullProcess().execute()
         return 1 if ingestion_summary.failed else 0
+
+    if args.command == "seed-demo":
+        return _run_seed_demo()
 
     if args.command in {
         "evaluate",

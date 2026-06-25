@@ -812,12 +812,42 @@ def test_final_answer_rejects_missing_citations_after_retry() -> None:
     retriever = RecordingRetriever([_source_result()])
     model = _standard_model(
         final_answer="Answer without a citation.",
-        additional_text_responses=("Still no citation.",),
+        additional_text_responses=(
+            "Still no citation.",
+            "Yet again no citation.",
+        ),
     )
     graph = _graph(chat_model=model, retriever=retriever)
 
     with pytest.raises(AgentExecutionError, match="must cite"):
         graph.answer(AgentRequest(question="Explain the MRI."))
+
+
+def test_task_plan_recovers_when_model_picks_unknown_specialist() -> None:
+    retriever = RecordingRetriever([_source_result()])
+    model = ScriptedChatModel(
+        structured_responses={
+            ResearchPlanPayload: [_research_plan()],
+            TaskPlanPayload: [
+                _task_plan(_task(profile="general_surgeon")),
+                _task_plan(_task(profile="orthopedist")),
+            ],
+            ConsultationReportPayload: [_report()],
+            ReviewDecisionPayload: [_review()],
+        },
+        text_responses=[AIMessage(content="Meniscal tear documented [S1].")],
+    )
+    graph = _graph(chat_model=model, retriever=retriever)
+
+    answer = graph.answer(AgentRequest(question="Explain the MRI."))
+
+    assert answer.agents == ("orthopedist",)
+    task_plan_calls = [
+        call
+        for call in model.calls
+        if call.get("kind") == "structured" and call.get("schema") is TaskPlanPayload
+    ]
+    assert len(task_plan_calls) == 2
 
 
 def test_professor_final_prompt_contains_medical_safety_policy() -> None:

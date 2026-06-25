@@ -319,6 +319,18 @@ If Qdrant is unavailable, the dashboard still shows local documents and clearly 
 
 After the first Compose start, log in and add your own PDFs. To rehearse the synthetic demo path, upload the three PDFs below, click `Run pipeline`, then ask a question in the `Medical agent` panel.
 
+To make the demo turn-key instead of uploading by hand, seed the three PDFs for the
+admin user. Either run `uv run python main.py seed-demo` after setup, or start Compose
+with `MEDIC_SEED_DEMO=true` so the `init` service uploads and indexes them before the
+dashboard starts. Seeding is idempotent by filename. For a clean rehearsal from an empty
+index, reset only the demo data volume first (this never touches the PostgreSQL volume):
+
+```bash
+docker-compose down
+docker volume rm medic_demo_data
+MEDIC_SEED_DEMO=true docker-compose up --build
+```
+
 Suggested 5-minute demo path:
 
 1. Log in with the account from `.env`.
@@ -350,6 +362,13 @@ Full preparation and indexing:
 
 ```bash
 uv run python main.py ingest
+```
+
+Seed the synthetic demo corpus for the dashboard admin user. The command is idempotent
+by filename, so re-running it does not create duplicate document records:
+
+```bash
+uv run python main.py seed-demo
 ```
 
 Run the full evaluation suite synchronously:

@@ -14,11 +14,11 @@
   },
   "chat": {
     "provider": "openrouter",
-    "model": "deepseek/deepseek-v4-pro",
+    "model": "openai/gpt-4.1-mini",
     "temperature": 0.2,
     "max_retrieval_queries": 6,
-    "max_consultations": 4,
-    "max_review_rounds": 3
+    "max_consultations": 2,
+    "max_review_rounds": 2
   },
   "embedding": {
     "provider": "openrouter",

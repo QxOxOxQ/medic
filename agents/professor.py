@@ -10,7 +10,12 @@ from agents.contracts import (
     ReviewOutcome,
     SpecialistTask,
 )
-from agents.models import AgentExecutionError, AgentRequest, AgentSource
+from agents.models import (
+    AgentExecutionError,
+    AgentRequest,
+    AgentSource,
+    UnknownAgentError,
+)
 from agents.ports import MedicalDocumentSearchPort, ProfessorModelPort
 from agents.profiles import AgentRegistry
 from agents.trace import AgentTraceRecorder
@@ -260,7 +265,7 @@ class ProfessorTaskPlanner:
         normalized: list[SpecialistTask] = []
         seen_ids: set[str] = set()
         for task in tasks:
-            canonical_profile = self._registry.canonical_name(task.profile)
+            canonical_profile = _canonical_profile(self._registry, task.profile)
             _validate_task(
                 task,
                 research_plan=research_plan,
@@ -387,7 +392,7 @@ class ProfessorReviewer:
         normalized_tasks: list[SpecialistTask] = []
         next_ids: set[str] = set()
         for task in decision.next_tasks:
-            canonical_profile = self._registry.canonical_name(task.profile)
+            canonical_profile = _canonical_profile(self._registry, task.profile)
             _validate_task(
                 task,
                 research_plan=research_plan,
@@ -484,7 +489,7 @@ class ProfessorSynthesizer:
             review_outcome=review_outcome,
         )
         validation_error: str | None = None
-        for attempt in range(2):
+        for attempt in range(3):
             answer = self._model_gateway.text(
                 system_prompt=self._professor_prompt,
                 user_prompt=self._prompt(
@@ -546,6 +551,16 @@ class ProfessorSynthesizer:
             f"{_source_blocks(sources) or '-'}"
             f"{correction}"
         )
+
+
+def _canonical_profile(registry: AgentRegistry, profile: str) -> str:
+    try:
+        return registry.canonical_name(profile)
+    except UnknownAgentError as error:
+        available = ", ".join(candidate.name for candidate in registry.profiles)
+        raise CoordinationValidationError(
+            f"unknown specialist profile '{profile}'; choose only from: {available}"
+        ) from error
 
 
 def _validate_task(

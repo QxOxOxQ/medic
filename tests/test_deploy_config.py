@@ -35,7 +35,6 @@ def test_production_compose_publishes_app_over_http() -> None:
     assert "POSTGRES_PASSWORD is required" in compose
     assert "postgresql+psycopg://" in compose
     assert "python main.py setup --no-create-env" in compose
-    assert "seed-demo" not in compose
     assert '"8000:8000"' in compose
     assert "caddy" not in compose
     assert "duckdns" not in compose

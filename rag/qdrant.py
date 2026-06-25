@@ -212,6 +212,6 @@ if __name__ == "__main__":
     print(f"Connected to Qdrant. Collection {qdrant.settings.qdrant_collection_name} is ready.")
 
     # Test hybrid search
-    results = qdrant.hybrid_search_with_rrf("kolano")
+    results = qdrant.hybrid_search_with_rrf("knee")
     for i, point in enumerate(results, 1):
         print(f"{i}. (Score: {point.score:.3f})  {point.payload} ")

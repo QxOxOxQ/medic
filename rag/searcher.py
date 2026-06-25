@@ -15,5 +15,5 @@ class Searcher:
 
 if __name__ == "__main__":
     searcher = Searcher()
-    results = searcher.search(query="wyniki krwi")
+    results = searcher.search(query="blood test results")
     print(results)

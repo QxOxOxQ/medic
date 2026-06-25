@@ -246,7 +246,7 @@ def test_main_prints_embedding_summary(
     embedder_module.main()
 
     captured = capsys.readouterr()
-    assert received_texts == ["To jest przykładowy tekst do testowego embeddingu."]
+    assert received_texts == ["This is a sample text for a test embedding."]
     assert captured.out == "Generated 1 embedding(s); first embedding dimension: 3\n"
 
 

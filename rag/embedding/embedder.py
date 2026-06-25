@@ -234,7 +234,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def main() -> None:
-    sample_texts = ["To jest przykładowy tekst do testowego embeddingu."]
+    sample_texts = ["This is a sample text for a test embedding."]
     embeddings = embed_texts(sample_texts)
     print(
         f"Generated {len(embeddings)} embedding(s); "

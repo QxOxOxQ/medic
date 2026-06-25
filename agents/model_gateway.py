@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -24,6 +26,7 @@ from agents.trace import AgentTraceRecorder
 
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
+_ResultT = TypeVar("_ResultT")
 
 
 class AgentModelGateway:
@@ -33,10 +36,14 @@ class AgentModelGateway:
         chat_model: BaseChatModel,
         observability: AgentObservability,
         trace_recorder: AgentTraceRecorder,
+        max_attempts: int = 3,
+        retry_backoff_seconds: float = 0.5,
     ) -> None:
         self._chat_model = chat_model
         self._observability = observability
         self._trace_recorder = trace_recorder
+        self._max_attempts = max(1, max_attempts)
+        self._retry_backoff_seconds = max(0.0, retry_backoff_seconds)
 
     def research_plan(
         self,
@@ -128,7 +135,11 @@ class AgentModelGateway:
                 schema,
                 method="function_calling",
             )
-            response = runnable.invoke(list(messages), config=config)
+            response = self._invoke_with_retry(
+                lambda: runnable.invoke(list(messages), config=config),
+                agent_name=agent_name,
+                phase=phase,
+            )
         except Exception as error:
             self._record_failure(agent_name=agent_name, phase=phase, error=error)
             raise AgentExecutionError("Agent structured model call failed") from error
@@ -167,7 +178,11 @@ class AgentModelGateway:
             phase=phase,
         )
         try:
-            response = self._chat_model.invoke(list(messages), config=config)
+            response = self._invoke_with_retry(
+                lambda: self._chat_model.invoke(list(messages), config=config),
+                agent_name=agent_name,
+                phase=phase,
+            )
         except Exception as error:
             self._record_failure(agent_name=agent_name, phase=phase, error=error)
             raise AgentExecutionError("Agent model call failed") from error
@@ -219,6 +234,53 @@ class AgentModelGateway:
             status="failed",
             agent_name=agent_name,
             payload={"phase": phase, "error": str(error)},
+        )
+
+    def _invoke_with_retry(
+        self,
+        operation: Callable[[], _ResultT],
+        *,
+        agent_name: str,
+        phase: str,
+    ) -> _ResultT:
+        last_error: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                return operation()
+            except Exception as error:
+                last_error = error
+                if attempt >= self._max_attempts:
+                    break
+                self._record_retry(
+                    agent_name=agent_name,
+                    phase=phase,
+                    attempt=attempt,
+                    error=error,
+                )
+                self._sleep_before_retry(attempt)
+        if last_error is None:
+            raise AgentExecutionError("Model call produced no result")
+        raise last_error
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        if self._retry_backoff_seconds <= 0:
+            return
+        time.sleep(self._retry_backoff_seconds * (2 ** (attempt - 1)))
+
+    def _record_retry(
+        self,
+        *,
+        agent_name: str,
+        phase: str,
+        attempt: int,
+        error: Exception,
+    ) -> None:
+        self._trace_recorder.record(
+            event_type="model_call",
+            title="Model call retrying after transient error",
+            status="retrying",
+            agent_name=agent_name,
+            payload={"phase": phase, "attempt": attempt, "error": str(error)},
         )
 
 

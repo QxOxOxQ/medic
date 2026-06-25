@@ -125,7 +125,6 @@ def test_docker_compose_configures_app_with_local_postgres_and_remote_qdrant(
     assert "source: demo_data" in result.stdout
     assert "target: /app/data" in result.stdout
     assert "python main.py setup --no-create-env" in result.stdout
-    assert "python main.py seed-demo" not in result.stdout
     assert "python main.py dashboard --host 0.0.0.0 --port 8000" in result.stdout
     assert "http://127.0.0.1:8000/healthz" in result.stdout
     assert "restart: unless-stopped" in result.stdout
