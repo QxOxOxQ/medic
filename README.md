@@ -114,20 +114,19 @@ runtime environment.
 
 ## Production Compose
 
-`docker-compose.prod.yml` documents the production stack. Caddy is the only
-public entry point on ports `80` and `443`; the dashboard remains internal on
-port `8000`. Caddy obtains and renews the public TLS certificate automatically.
-Point `MEDIC_DOMAIN`'s DNS `A` record at the OCI VM's public IPv4 address. The
-public repository only verifies and publishes the runtime image. Deployment runs
-manually from
-the private `QxOxOxQ/medic-deploy` repository so public pull requests cannot
-reach the self-hosted runner.
+`docker-compose.prod.yml` documents the production stack. The dashboard is
+published directly on port `8000` and served over plain HTTP at
+`http://<public-ip>:8000/`. Because traffic is unencrypted,
+`MEDIC_DASHBOARD_COOKIE_SECURE` is `false` (Secure cookies require HTTPS); put a
+reverse proxy with a real domain in front to re-enable TLS. The public
+repository only verifies and publishes the runtime image. Deployment runs
+manually from the private `QxOxOxQ/medic-deploy` repository so public pull
+requests cannot reach the self-hosted runner.
 
 Keep `/opt/medic/.env` on the OCI host and set at least:
 
 ```env
 MEDIC_IMAGE=ghcr.io/qxoxoxq/medic:sha-...
-MEDIC_DOMAIN=medic.example.com
 POSTGRES_PASSWORD=replace-with-a-long-random-password
 MEDIC_DATABASE_URL=postgresql+psycopg://medic:replace-with-a-long-random-password@postgres:5432/medic
 OPENROUTER_API_KEY=...
@@ -141,10 +140,9 @@ MEDIC_SESSION_SECRET=replace-with-a-long-random-secret
 If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
 
-Before the first deployment, open public TCP ports `80` and `443` in both
-Oracle Linux `firewalld` and the OCI Network Security Group. Follow
-[`docs/oci-public-https.md`](docs/oci-public-https.md). Remove any public
-port-`8000` rule after HTTPS verification succeeds.
+The OCI Network Security Group attached to the instance must allow ingress from
+`0.0.0.0/0` to TCP port `8000`. The **Deploy OCI** workflow opens the matching
+host `firewalld` rule automatically.
 
 ### OCI GitHub Actions runner service
 

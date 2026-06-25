@@ -18,7 +18,7 @@ x-app-environment: &app-environment
   MEDIC_DASHBOARD_USERNAME: "${MEDIC_DASHBOARD_USERNAME:?MEDIC_DASHBOARD_USERNAME is required}"
   MEDIC_DASHBOARD_PASSWORD: "${MEDIC_DASHBOARD_PASSWORD:?MEDIC_DASHBOARD_PASSWORD is required}"
   MEDIC_SESSION_SECRET: "${MEDIC_SESSION_SECRET:?MEDIC_SESSION_SECRET is required}"
-  MEDIC_DASHBOARD_COOKIE_SECURE: "true"
+  MEDIC_DASHBOARD_COOKIE_SECURE: "false"
   FORWARDED_ALLOW_IPS: "*"
 
 services:
@@ -56,6 +56,8 @@ services:
       init:
         condition: service_completed_successfully
     environment: *app-environment
+    ports:
+      - "8000:8000"
     volumes:
       - demo_data:/app/data
     command: >
@@ -74,24 +76,6 @@ services:
       retries: 3
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2.11.4-alpine
-    depends_on:
-      app:
-        condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      MEDIC_DOMAIN: "${MEDIC_DOMAIN:?MEDIC_DOMAIN is required}"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   demo_data:
-  caddy_data:
-  caddy_config:
