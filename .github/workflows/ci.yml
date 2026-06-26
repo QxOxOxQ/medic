@@ -95,3 +95,100 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
           docker push "${IMAGE_SHA}"
           docker push "${IMAGE_LATEST}"
+
+  deploy:
+    name: Deploy to production
+    runs-on: [self-hosted, Linux, X64]
+    needs:
+      - image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install production configuration
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/medic
+          sudo chown "$(id -u):$(id -g)" /opt/medic
+          install -m 0644 deploy/docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
+          test -s /opt/medic/.env
+
+      - name: Bootstrap Docker on runner
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo dnf install -y dnf-plugins-core
+            sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+            sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          fi
+          sudo systemctl enable --now docker
+          sudo docker version
+          sudo docker compose version
+
+      - name: Configure host firewall
+        run: |
+          set -euo pipefail
+          if ! command -v firewall-cmd >/dev/null 2>&1; then
+            sudo dnf install -y firewalld
+          fi
+          sudo systemctl enable --now firewalld
+          sudo firewall-cmd --permanent --add-port=8000/tcp
+          sudo firewall-cmd --permanent --remove-service=http || true
+          sudo firewall-cmd --permanent --remove-service=https || true
+          sudo firewall-cmd --reload
+          sudo firewall-cmd --list-all
+
+      - name: Validate and deploy stack
+        run: |
+          set -euo pipefail
+          export MEDIC_IMAGE="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          cd /opt/medic
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml config --quiet
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml pull
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml up -d
+
+          for attempt in $(seq 1 45); do
+            app_container="$(
+              sudo --preserve-env=MEDIC_IMAGE \
+                docker compose -f docker-compose.prod.yml ps -q app
+            )"
+            if test -n "${app_container}" && \
+              test "$(
+                sudo docker inspect --format '{{.State.Health.Status}}' "${app_container}"
+              )" = "healthy"; then
+              break
+            fi
+            if test "${attempt}" -eq 45; then
+              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
+              sudo --preserve-env=MEDIC_IMAGE \
+                docker compose -f docker-compose.prod.yml logs app
+              exit 1
+            fi
+            sleep 2
+          done
+
+          for attempt in $(seq 1 45); do
+            status="$(
+              curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+                "http://127.0.0.1:8000/healthz" || true
+            )"
+            if test "${status}" = "204"; then
+              break
+            fi
+            if test "${attempt}" -eq 45; then
+              sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
+              sudo --preserve-env=MEDIC_IMAGE \
+                docker compose -f docker-compose.prod.yml logs app
+              exit 1
+            fi
+            sleep 4
+          done
+
+          sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
