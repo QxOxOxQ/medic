@@ -1,0 +1,26 @@
+{
+  "id": "medical-demo-v1",
+  "version": "1.0.0",
+  "dataset_name": "medic/medical-demo-v1",
+  "retrieval_limit": 5,
+  "gate_version": "medical-demo-gate-v1",
+  "agent_prompt_version": "agents-v2",
+  "document_paths": [
+    "demo_documents/synthetic_acl_rehab_demo.pdf",
+    "demo_documents/synthetic_psoriasis_treatment_demo.pdf",
+    "demo_documents/synthetic_glp1_remote_monitoring_demo.pdf"
+  ],
+  "thresholds": [
+    {"metric": "hit_rate_at_5", "minimum": 1.0, "scope": "aggregate"},
+    {"metric": "mrr_at_5", "minimum": 0.9, "scope": "aggregate"},
+    {"metric": "citation_validity", "minimum": 1.0, "scope": "aggregate"},
+    {"metric": "abstention_accuracy", "minimum": 1.0, "scope": "aggregate"},
+    {"metric": "context_precision", "minimum": 0.8, "scope": "aggregate"},
+    {"metric": "context_recall", "minimum": 0.9, "scope": "aggregate"},
+    {"metric": "faithfulness", "minimum": 0.95, "scope": "aggregate"},
+    {"metric": "faithfulness", "minimum": 0.8, "scope": "case"},
+    {"metric": "answer_correctness", "minimum": 0.85, "scope": "aggregate"},
+    {"metric": "answer_correctness", "minimum": 0.7, "scope": "case"},
+    {"metric": "answer_relevancy", "minimum": 0.8, "scope": "aggregate"}
+  ]
+}

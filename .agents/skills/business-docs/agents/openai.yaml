@@ -1,0 +1,4 @@
+interface:
+  display_name: "Business Docs"
+  short_description: "Business-facing app documentation"
+  default_prompt: "Use $business-docs to document how this app works for business readers."

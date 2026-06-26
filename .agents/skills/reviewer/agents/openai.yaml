@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reviewer"
+  short_description: "Ruthless architecture and code review"
+  default_prompt: "Use $reviewer to review the current change against AGENTS.md."

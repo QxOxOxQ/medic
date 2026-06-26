@@ -1,0 +1,8 @@
+{% extends "sqladmin_original/layout.html" %}
+
+{% block body %}
+{{ super() }}
+<div style="position: fixed; bottom: 6px; right: 14px; font-size: 0.7rem; color: #adb5bd; z-index: 9999; pointer-events: none;">
+  commit:&nbsp;<code style="color: #6c757d; background: #f1f3f4; padding: 1px 5px; border-radius: 3px; font-size: 0.68rem;">{{ git_commit_id }}</code>
+</div>
+{% endblock %}

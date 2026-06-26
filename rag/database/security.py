@@ -1,0 +1,18 @@
+from __future__ import annotations
+
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, VerificationError
+
+
+_PASSWORD_HASHER = PasswordHasher()
+
+
+def hash_password(password: str) -> str:
+    return _PASSWORD_HASHER.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return _PASSWORD_HASHER.verify(password_hash, password)
+    except (VerifyMismatchError, VerificationError):
+        return False

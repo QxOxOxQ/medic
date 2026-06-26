@@ -1,0 +1,47 @@
+--- 1. Baseline Search Performance (Float32) ---
+Baseline:
+  Average latency: 87.84ms
+  P95 latency: 98.38ms
+  Memory usage: Check Qdrant Cloud dashboard
+
+--- 2. Preparing Quantized Collections (Migration) ---
+Migrating data from dbpedia_100K to quantized collections...
+Creating collection: quantized_scalar...
+Zmigrowano 100000 punktów do: quantized_scalar
+Creating collection: quantized_binary...
+Zmigrowano 100000 punktów do: quantized_binary
+Creating collection: quantized_binary_2bit...
+Zmigrowano 100000 punktów do: quantized_binary_2bit
+
+--- 3. Benchmarking Quantized Collections ---
+
+>> Method: scalar
+Traceback (most recent call last):
+  File "/Users/al/Desktop/medic/rag/measurement/performance.py", line 225, in <module>
+    if (i + 1) % 5 == 0 or (i + 1) == len(query_vectors):
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/rag/measurement/performance.py", line 42, in measure_search_performance
+    print(f"[{label}] Warm up search...")
+  File "/Users/al/Desktop/medic/rag/qdrant.py", line 22, in query_points
+    def query_points(self, **kwargs):
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/qdrant_client.py", line 423, in query_points
+    return self._client.query_points(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/qdrant_remote.py", line 583, in query_points
+    query_result = self.http.search_api.query_points(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/http/api/search_api.py", line 783, in query_points
+    return self._build_for_query_points(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/http/api/search_api.py", line 181, in _build_for_query_points
+    return self.api_client.request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/http/api_client.py", line 95, in request
+    return self.send(request, type_)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/al/Desktop/medic/.venv/lib/python3.12/site-packages/qdrant_client/http/api_client.py", line 130, in send
+    raise UnexpectedResponse.for_response(response)
+qdrant_client.http.exceptions.UnexpectedResponse: Unexpected Response: 400 (Bad Request)
+Raw response content:
+b'{"status":{"error":"Wrong input: Not existing vector name error: "},"time":0.004147609}'

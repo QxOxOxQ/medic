@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <meta name="theme-color" content="#f6f8fa">
+    <title>Medic RAG</title>
+    {% for stylesheet in frontend_assets.styles %}
+      <link rel="stylesheet" href="{{ stylesheet }}">
+    {% endfor %}
+    <script type="module" src="{{ frontend_assets.script }}"></script>
+  </head>
+  <body>
+    <div
+      id="medic-app"
+      data-username="{{ username }}"
+      data-is-admin="{{ 'true' if is_admin else 'false' }}"
+    ></div>
+    <noscript>Medic RAG requires JavaScript to run the dashboard.</noscript>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+x-app-environment: &app-environment
+  MEDIC_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-medic}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-medic}"
+  OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
+  QdrantURL: "${QdrantURL:?QdrantURL is required}"
+  QdrantApiKey: "${QdrantApiKey:?QdrantApiKey is required}"
+  MEDIC_QDRANT_COLLECTION: "${MEDIC_QDRANT_COLLECTION:-hybrid_medic_oci_documents}"
+  MEDIC_EVAL_QDRANT_PREFIX: "${MEDIC_EVAL_QDRANT_PREFIX:-medic_eval}"
+  MEDIC_EVAL_JUDGE_MODEL: "${MEDIC_EVAL_JUDGE_MODEL:-openai/gpt-4.1-mini}"
+  MEDIC_EVAL_EMBEDDING_MODEL: "${MEDIC_EVAL_EMBEDDING_MODEL:-openai/text-embedding-3-small}"
+  LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+  LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+  LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}"
+  LANGFUSE_TRACING_ENVIRONMENT: "${LANGFUSE_TRACING_ENVIRONMENT:-evaluation}"
+  MEDIC_LANGFUSE_TRACING_ENABLED: "${MEDIC_LANGFUSE_TRACING_ENABLED:-false}"
+  MEDIC_LANGFUSE_ENVIRONMENT: "${MEDIC_LANGFUSE_ENVIRONMENT:-production}"
+  MEDIC_LANGFUSE_SAMPLE_RATE: "${MEDIC_LANGFUSE_SAMPLE_RATE:-1.0}"
+  MEDIC_LANGFUSE_CAPTURE_CONTENT: "${MEDIC_LANGFUSE_CAPTURE_CONTENT:-false}"
+  MEDIC_DASHBOARD_USERNAME: "${MEDIC_DASHBOARD_USERNAME:?MEDIC_DASHBOARD_USERNAME is required}"
+  MEDIC_DASHBOARD_PASSWORD: "${MEDIC_DASHBOARD_PASSWORD:?MEDIC_DASHBOARD_PASSWORD is required}"
+  MEDIC_SESSION_SECRET: "${MEDIC_SESSION_SECRET:?MEDIC_SESSION_SECRET is required}"
+  MEDIC_DASHBOARD_COOKIE_SECURE: "false"
+  FORWARDED_ALLOW_IPS: "*"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-medic}"
+      POSTGRES_USER: "${POSTGRES_USER:-medic}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  init:
+    image: "${MEDIC_IMAGE:?MEDIC_IMAGE is required}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-environment
+    volumes:
+      - demo_data:/app/data
+    command: >
+      sh -c "python main.py setup --no-create-env"
+
+  app:
+    image: "${MEDIC_IMAGE:?MEDIC_IMAGE is required}"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment: *app-environment
+    ports:
+      - "8000:8000"
+    volumes:
+      - demo_data:/app/data
+    command: >
+      sh -c "python main.py dashboard --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          from urllib.request import urlopen;
+          urlopen('http://127.0.0.1:8000/healthz', timeout=3).close()
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  demo_data:

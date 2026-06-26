@@ -1,0 +1,34 @@
+{
+  "professor_prompt": "professor.md",
+  "system_prompt": "base.md",
+  "profiles": [
+    {
+      "name": "orthopedist",
+      "display_name": "Orthopedist",
+      "aliases": ["orthopaedist"],
+      "expertise": "Musculoskeletal injuries and disorders, joints, spine, diagnostic imaging, postoperative status, rehabilitation, function, swelling, instability, and orthopedic red flags.",
+      "prompt": "orthopedist.md"
+    },
+    {
+      "name": "neurologist",
+      "display_name": "Neurologist",
+      "aliases": ["neurology"],
+      "expertise": "Neurological symptoms and examinations, focal deficits, headache, seizures, sensory and motor disorders, neuroimaging, electrophysiology, and acute neurological red flags.",
+      "prompt": "neurologist.md"
+    },
+    {
+      "name": "dermatologist",
+      "display_name": "Dermatologist",
+      "aliases": ["dermatology"],
+      "expertise": "Skin findings and morphology, inflammatory and infectious skin disease, lesions, psoriasis, dermatologic therapies, treatment monitoring, and severe skin-reaction red flags.",
+      "prompt": "dermatologist.md"
+    },
+    {
+      "name": "cardiometabolic_internist",
+      "display_name": "Cardiometabolic internist",
+      "aliases": ["internist", "cardiologist", "cardiometabolic"],
+      "expertise": "Laboratory interpretation, lipids, glucose, blood pressure, weight, cardiometabolic risk, chronic disease monitoring, medication signals, and renal or hepatic monitoring.",
+      "prompt": "cardiometabolic_internist.md"
+    }
+  ]
+}

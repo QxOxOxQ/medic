@@ -1,0 +1,274 @@
+.button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-4);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.primary {
+  color: white;
+  background: var(--accent-700);
+}
+
+.primary:hover {
+  background: var(--accent-800);
+}
+
+.secondary {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface);
+}
+
+.secondary:hover {
+  border-color: var(--accent-300);
+  background: var(--accent-50);
+}
+
+.danger {
+  border-color: var(--danger-200);
+  color: var(--danger-700);
+  background: var(--danger-50);
+}
+
+.ghost {
+  color: var(--muted);
+  background: transparent;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.iconButton {
+  width: 42px;
+  padding: 0;
+}
+
+.badge {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--surface-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.badge::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.positive {
+  color: var(--success-700);
+  background: var(--success-50);
+}
+
+.warning {
+  color: var(--warning-700);
+  background: var(--warning-50);
+}
+
+.negative {
+  color: var(--danger-700);
+  background: var(--danger-50);
+}
+
+.active {
+  color: var(--info-700);
+  background: var(--info-50);
+}
+
+.alert {
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--surface);
+}
+
+.alert strong {
+  font-size: 0.92rem;
+}
+
+.alert p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.alertError {
+  border-color: var(--danger-200);
+  background: var(--danger-50);
+}
+
+.toast {
+  position: fixed;
+  z-index: 120;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  max-width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.toastError {
+  border-color: var(--danger-200);
+  background: var(--danger-50);
+}
+
+.empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  gap: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty h3,
+.empty p {
+  margin: 0;
+}
+
+.skeleton {
+  overflow: hidden;
+  min-height: 18px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--surface-strong),
+    var(--surface),
+    var(--surface-strong)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite linear;
+}
+
+.dialogBackdrop,
+.drawerBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  background: rgb(15 23 42 / 42%);
+}
+
+.dialogBackdrop {
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.dialogHeader,
+.drawerHeader,
+.dialogActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dialogHeader h2,
+.drawerHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.dialogActions {
+  justify-content: flex-end;
+  margin-top: var(--space-6);
+}
+
+.drawerBackdrop {
+  justify-items: end;
+}
+
+.drawer {
+  width: min(720px, 100%);
+  height: 100%;
+  overflow: auto;
+  padding: var(--space-6);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  min-height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 var(--space-3);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tabActive {
+  border-bottom-color: var(--accent-700);
+  color: var(--accent-800);
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .drawer {
+    width: 100%;
+    padding: var(--space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .skeleton {
+    transition: none;
+    animation: none;
+  }
+}

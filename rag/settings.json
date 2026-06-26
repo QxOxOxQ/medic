@@ -1,0 +1,104 @@
+{
+  "env": {
+    "qdrant_url": "QdrantURL",
+    "qdrant_api_key": "QdrantApiKey",
+    "qdrant_collection_name": "MEDIC_QDRANT_COLLECTION",
+    "database_url": "MEDIC_DATABASE_URL",
+    "openrouter_api_key": "OPENROUTER_API_KEY",
+    "run_openrouter_live_tests": "RUN_OPENROUTER_LIVE_TESTS",
+    "run_qdrant_live_tests": "RUN_QDRANT_LIVE_TESTS",
+    "run_postgres_live_tests": "RUN_POSTGRES_LIVE_TESTS"
+  },
+  "openrouter": {
+    "base_url": "https://openrouter.ai/api/v1"
+  },
+  "chat": {
+    "provider": "openrouter",
+    "model": "openai/gpt-4.1-mini",
+    "temperature": 0.2,
+    "max_retrieval_queries": 6,
+    "max_consultations": 2,
+    "max_review_rounds": 2,
+    "max_full_documents": 3,
+    "models": {
+      "professor": "openai/gpt-4.1-mini",
+      "orthopedist": "openai/gpt-4.1-mini",
+      "neurologist": "openai/gpt-4.1-mini",
+      "dermatologist": "openai/gpt-4.1-mini",
+      "cardiometabolic_internist": "openai/gpt-4.1-mini"
+    }
+  },
+  "embedding": {
+    "provider": "openrouter",
+    "model": "openai/text-embedding-3-small"
+  },
+  "qdrant": {
+    "collection_name": "hybrid_medic_documents",
+    "client_timeout_seconds": 60,
+    "dense_vector": {
+      "name": "dense",
+      "size": 1536
+    },
+    "sparse_vector": {
+      "name": "sparse",
+      "model": "Qdrant/bm25",
+      "on_disk": false
+    },
+    "prefetch_limit": 20,
+    "quantization": {
+      "encoding": "ONE_BIT",
+      "always_ram": true
+    }
+  },
+  "document_preparation": {
+    "data_dir": "data",
+    "raw_documents_dir": "raw",
+    "parsed_markdown_dir": "parsed"
+  },
+  "fast_embedding": {
+    "default_model": "colbert",
+    "models": {
+      "386": {
+        "provider": "text_embedding",
+        "model_name": "BAAI/bge-small-en-v1.5"
+      },
+      "colbert": {
+        "provider": "late_interaction_text_embedding",
+        "model_name": "colbert-ir/colbertv2.0"
+      }
+    }
+  },
+  "measurement": {
+    "performance": {
+      "scroll_batch_size": 500,
+      "upload_batch_size": 100,
+      "upload_parallel": 2,
+      "search_limit": 10,
+      "quantized_vectors_on_disk": true
+    },
+    "quantization_configs": {
+      "scalar": {
+        "kind": "scalar",
+        "scalar_type": "INT8",
+        "quantile": 0.99,
+        "always_ram": true,
+        "expected_speedup": "2x",
+        "expected_compression": "4x"
+      },
+      "binary": {
+        "kind": "binary",
+        "encoding": "ONE_BIT",
+        "always_ram": true,
+        "expected_speedup": "40x",
+        "expected_compression": "32x"
+      },
+      "binary_2bit": {
+        "kind": "binary",
+        "encoding": "TWO_BITS",
+        "always_ram": true,
+        "expected_speedup": "20x",
+        "expected_compression": "16x"
+      }
+    }
+  }
+}

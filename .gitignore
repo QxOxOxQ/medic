@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+node_modules/
+dashboard/static/dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+.env.*
+!.env.example
+
+# IDE/project-local files
+.idea/
+
+# Test artifacts
+.pytest_cache/
+playwright-report/
+test-results/
+tmp/
+
+# Generated document data
+data/*.db
+data/evaluation/
+data/parsed/
+data/raw/
+data/ingestion_manifest.json
+
+# Application logs
+logs/
+.aider*
+sk-*

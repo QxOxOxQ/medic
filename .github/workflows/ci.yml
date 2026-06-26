@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      QdrantURL: http://127.0.0.1:6333
+      QdrantApiKey: test-qdrant-key
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+          version: "0.11.24"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Verify source
+        run: make verify
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Build runtime image
+        run: |
+          touch .aider-secret-sentinel
+          docker build --tag medic:test .
+
+      - name: Inspect runtime image
+        run: |
+          test "$(docker image inspect medic:test --format '{{.Config.User}}')" = "medic:medic"
+          test "$(docker image inspect medic:test --format '{{.Size}}')" -le 2000000000
+          docker run --rm --entrypoint python medic:test -c \
+            "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('ragas') is None"
+          ! docker run --rm --entrypoint test medic:test -e /app/.aider-secret-sentinel
+          ! docker run --rm --entrypoint test medic:test -e /app/tests
+          ! docker run --rm --entrypoint test medic:test -e /app/evaluation
+
+      - name: Smoke test runtime image
+        run: bash scripts/smoke_runtime_image.sh medic:test
