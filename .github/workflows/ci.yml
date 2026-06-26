@@ -95,3 +95,20 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
           docker push "${IMAGE_SHA}"
           docker push "${IMAGE_LATEST}"
+
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs:
+      - image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger medic-deploy
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml \
+            --repo QxOxOxQ/medic-deploy \
+            --ref main \
+            --field image_tag="sha-${GITHUB_SHA}"
