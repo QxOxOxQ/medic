@@ -3,12 +3,22 @@ name: CI
 on:
   pull_request:
   push:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: qxoxoxq/medic
+
 jobs:
-  quality:
+  verify:
+    name: Verify source
     runs-on: ubuntu-latest
     env:
       QdrantURL: http://127.0.0.1:6333
@@ -39,25 +49,49 @@ jobs:
         run: make verify
 
   image:
+    name: Build runtime image
     runs-on: ubuntu-latest
+    needs:
+      - verify
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build runtime image
         run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
           touch .aider-secret-sentinel
-          docker build --tag medic:test .
+          docker build --tag "${IMAGE_SHA}" --tag "${IMAGE_LATEST}" .
 
       - name: Inspect runtime image
         run: |
-          test "$(docker image inspect medic:test --format '{{.Config.User}}')" = "medic:medic"
-          test "$(docker image inspect medic:test --format '{{.Size}}')" -le 2000000000
-          docker run --rm --entrypoint python medic:test -c \
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          test "$(docker image inspect "${IMAGE_SHA}" --format '{{.Config.User}}')" = "medic:medic"
+          test "$(docker image inspect "${IMAGE_SHA}" --format '{{.Size}}')" -le 2000000000
+          docker run --rm --entrypoint python "${IMAGE_SHA}" -c \
             "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('ragas') is None"
-          ! docker run --rm --entrypoint test medic:test -e /app/.aider-secret-sentinel
-          ! docker run --rm --entrypoint test medic:test -e /app/tests
-          ! docker run --rm --entrypoint test medic:test -e /app/evaluation
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/.aider-secret-sentinel
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/tests
+          ! docker run --rm --entrypoint test "${IMAGE_SHA}" -e /app/evaluation
 
       - name: Smoke test runtime image
-        run: bash scripts/smoke_runtime_image.sh medic:test
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          bash scripts/smoke_runtime_image.sh "${IMAGE_SHA}"
+
+      - name: Push runtime image
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          docker push "${IMAGE_SHA}"
+          docker push "${IMAGE_LATEST}"
