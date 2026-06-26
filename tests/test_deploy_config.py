@@ -71,15 +71,13 @@ def test_ci_workflow_configures_qdrant_for_quality_tests() -> None:
     assert f"{qdrant_api_key_env}: test-qdrant-key" in workflow
     assert 'node-version: "24"' in workflow
     assert "make verify" in workflow
-    assert "bash scripts/smoke_runtime_image.sh medic:test" in workflow
+    assert 'bash scripts/smoke_runtime_image.sh "${IMAGE_SHA}"' in workflow
 
 
-def test_public_workflow_verifies_and_publishes_without_self_hosted_deploy() -> None:
+def test_ci_workflow_verifies_and_publishes_image() -> None:
     workflow = (
-        PROJECT_ROOT / ".github" / "workflows" / "deploy.yml"
+        PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
     ).read_text(encoding="utf-8")
-    openrouter_api_key_env = SETTINGS["env"]["openrouter_api_key"]
-    qdrant_url_env = SETTINGS["env"]["qdrant_url"]
 
     assert "pull_request:" in workflow
     assert "push:" in workflow
@@ -93,24 +91,46 @@ def test_public_workflow_verifies_and_publishes_without_self_hosted_deploy() -> 
         "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
         "&& github.ref == 'refs/heads/main'"
     ) in workflow
+    assert 'docker push "${IMAGE_SHA}"' in workflow
+    assert 'docker push "${IMAGE_LATEST}"' in workflow
+    assert "packages: write" in workflow
+    assert 'docker login "${REGISTRY}"' in workflow
     assert "MEDIC_RUN_LIVE_EVALUATION" not in workflow
     assert "evaluation-bootstrap-dataset" not in workflow
     assert "evaluation-calibrate" not in workflow
     assert "main.py evaluate" not in workflow
-    assert "docker push \"${IMAGE_SHA}\"" in workflow
-    assert "docker push \"${IMAGE_LATEST}\"" in workflow
-    assert "packages: write" in workflow
-    assert "runs-on: [self-hosted, Linux, X64]" not in workflow
-    assert "environment: production" not in workflow
+
+
+def test_ci_workflow_deploys_to_production_only_from_main_on_self_hosted() -> None:
+    workflow = (
+        PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+
+    # The deploy job is the only self-hosted job; verify and image stay on
+    # disposable GitHub-hosted runners so pull-request code never reaches the
+    # production host.
+    assert "runs-on: [self-hosted, Linux, X64]" in workflow
+    assert workflow.count("runs-on: ubuntu-latest") == 2
+    assert "environment: production" in workflow
+
+    # Deploy is gated to pushes to main only — no pull request can deploy.
     assert (
-        f"{openrouter_api_key_env}: "
-        f"${{{{ secrets.{openrouter_api_key_env} }}}}"
-    ) not in workflow
-    assert f"{qdrant_url_env}=${{QDRANT_URL}}" not in workflow
-    assert "ssh " not in workflow
-    assert "scp " not in workflow
-    assert "docker login \"${REGISTRY}\"" in workflow
-    assert "docker compose -f docker-compose.prod.yml" not in workflow
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    ) in workflow
+
+    # Same-repo deploy uses the built-in token, never a cross-repo PAT.
+    assert "DEPLOY_DISPATCH_TOKEN" not in workflow
+    assert "secrets.GITHUB_TOKEN" in workflow
+
+    # Deploy drives the production compose stack from the repository root.
+    assert (
+        "install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml"
+        in workflow
+    )
+    assert "docker compose -f docker-compose.prod.yml" in workflow
+
+    # The insecure trigger that would expose secrets to forks is never used.
+    assert "pull_request_target" not in workflow
 
 
 def test_evaluation_workflow_runs_independently_on_demand() -> None:
