@@ -116,7 +116,7 @@ jobs:
           set -euo pipefail
           sudo mkdir -p /opt/medic
           sudo chown "$(id -u):$(id -g)" /opt/medic
-          install -m 0644 deploy/docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
+          install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
           test -s /opt/medic/.env
 
       - name: Bootstrap Docker on runner
