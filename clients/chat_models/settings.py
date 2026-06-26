@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +23,8 @@ class ChatModelSettings:
     max_consultations: int
     max_review_rounds: int
     provider_options: Mapping[str, Any]
+    agent_models: Mapping[str, str] = field(default_factory=dict)
+    max_full_documents: int = 3
 
 
 def get_chat_model_settings(
@@ -50,7 +52,17 @@ def get_chat_model_settings(
             env_names=env_names,
             dotenv_settings=dotenv_settings,
         ),
+        agent_models=_agent_models(chat_config.get("models", {})),
+        max_full_documents=int(chat_config.get("max_full_documents", 3)),
     )
+
+
+def _agent_models(raw: Mapping[str, Any]) -> Mapping[str, str]:
+    return {
+        str(role).strip(): str(model).strip()
+        for role, model in raw.items()
+        if str(role).strip() and str(model).strip()
+    }
 
 
 def _provider_options(

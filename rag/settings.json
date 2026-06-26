@@ -18,7 +18,15 @@
     "temperature": 0.2,
     "max_retrieval_queries": 6,
     "max_consultations": 2,
-    "max_review_rounds": 2
+    "max_review_rounds": 2,
+    "max_full_documents": 3,
+    "models": {
+      "professor": "openai/gpt-4.1-mini",
+      "orthopedist": "openai/gpt-4.1-mini",
+      "neurologist": "openai/gpt-4.1-mini",
+      "dermatologist": "openai/gpt-4.1-mini",
+      "cardiometabolic_internist": "openai/gpt-4.1-mini"
+    }
   },
   "embedding": {
     "provider": "openrouter",

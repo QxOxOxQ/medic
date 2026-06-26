@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -25,8 +26,12 @@ class ChatModelFactory:
     def create(
         self,
         settings: ChatModelSettings | None = None,
+        *,
+        model: str | None = None,
     ) -> BaseChatModel:
         resolved_settings = settings or get_chat_model_settings()
+        if model is not None and model != resolved_settings.model:
+            resolved_settings = replace(resolved_settings, model=model)
         try:
             adapter = self._registry[resolved_settings.provider]
         except KeyError as error:

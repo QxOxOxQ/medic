@@ -207,6 +207,7 @@ class ChatSourceDto(BaseModel):
     retrieval_query: str | None
     score: float | None
     excerpt: str
+    used: bool = False
 
 
 class ChatMessageDto(BaseModel):

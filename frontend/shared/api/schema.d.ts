@@ -799,6 +799,11 @@ export interface components {
             source: string | null;
             /** Source Id */
             source_id: string;
+            /**
+             * Used
+             * @default false
+             */
+            used: boolean;
         };
         /** ChatTraceEventDto */
         ChatTraceEventDto: {

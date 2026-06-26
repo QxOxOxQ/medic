@@ -6,9 +6,23 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from agents.model_gateway import AgentModelGateway
+from agents.model_router import RoutedModel
 from agents.models import AgentExecutionError
 from agents.observability import NullAgentObservability
 from agents.trace import AgentTraceRecorder
+
+
+class _LabeledChatModel:
+    """Chat model stub that records how many times it was invoked."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+        self.calls = 0
+
+    def invoke(self, messages: Any, config: Any = None) -> AIMessage:
+        del messages, config
+        self.calls += 1
+        return AIMessage(content=self._content)
 
 
 class _FlakyChatModel:
@@ -85,6 +99,49 @@ def test_text_succeeds_on_first_attempt_without_retry() -> None:
 
     assert answer == "final answer"
     assert chat_model.calls == 1
+
+
+def test_text_routes_to_per_agent_model_and_records_model_label() -> None:
+    default_model = _LabeledChatModel("default-model answer")
+    specialist_model = _LabeledChatModel("specialist answer")
+    trace_recorder = AgentTraceRecorder()
+    gateway = AgentModelGateway(
+        chat_model=default_model,  # type: ignore[arg-type]
+        observability=NullAgentObservability(),
+        trace_recorder=trace_recorder,
+        model_overrides={
+            "orthopedist": RoutedModel(
+                model=specialist_model,  # type: ignore[arg-type]
+                label="model-b",
+            ),
+        },
+        default_label="model-a",
+    )
+
+    professor_answer = gateway.text(
+        system_prompt="s",
+        user_prompt="u",
+        agent_name="professor",
+        phase="synthesis",
+    )
+    specialist_answer = gateway.text(
+        system_prompt="s",
+        user_prompt="u",
+        agent_name="orthopedist",
+        phase="consultation",
+    )
+
+    assert professor_answer == "default-model answer"
+    assert specialist_answer == "specialist answer"
+    assert default_model.calls == 1
+    assert specialist_model.calls == 1
+    labelled = {
+        (event.agent_name, event.payload.get("model"))
+        for event in trace_recorder.events()
+        if event.event_type == "model_call" and event.status == "succeeded"
+    }
+    assert ("professor", "model-a") in labelled
+    assert ("orthopedist", "model-b") in labelled
 
 
 def test_retry_records_each_failed_attempt_in_trace() -> None:

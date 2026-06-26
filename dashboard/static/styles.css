@@ -596,6 +596,33 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+.agent-model {
+  margin-left: 6px;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.source-flag {
+  border-radius: 999px;
+  padding: 0 7px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.unused-sources {
+  margin-top: 10px;
+}
+
+.unused-sources .source-list {
+  margin-top: 8px;
+}
+
 .chat-warning {
   color: var(--warning);
   font-weight: 700;

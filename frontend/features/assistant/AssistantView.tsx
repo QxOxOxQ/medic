@@ -255,6 +255,17 @@ function Message({
       const agents = event.payload.selected_agents;
       return Array.isArray(agents) ? agents.map(String) : [];
     });
+  const models = modelsByAgent(message.trace_events);
+  const expanded = expandedSourceIds(message.trace_events);
+  const agents = uniqueStrings([
+    ...(models.has("professor") ? ["professor"] : []),
+    ...selectedAgents,
+  ]);
+  const usedSources = message.sources.filter((source) => source.used);
+  const visibleSources = usedSources.length ? usedSources : message.sources;
+  const hiddenSources = usedSources.length
+    ? message.sources.filter((source) => !source.used)
+    : [];
   return (
     <article
       class={`${styles.message} ${
@@ -267,10 +278,15 @@ function Message({
           {new Date(message.created_at).toLocaleTimeString()}
         </time>
       </div>
-      {selectedAgents.length ? (
+      {agents.length ? (
         <div class={styles.actions}>
-          {selectedAgents.map((agent) => (
-            <StatusBadge status={agent.replaceAll("_", " ")} key={agent} />
+          {agents.map((agent) => (
+            <span class={styles.agentChip} key={agent}>
+              <StatusBadge status={agent.replaceAll("_", " ")} />
+              {models.get(agent) ? (
+                <span class={styles.agentModel}>{models.get(agent)}</span>
+              ) : null}
+            </span>
           ))}
         </div>
       ) : null}
@@ -281,17 +297,27 @@ function Message({
       {message.sources.length ? (
         <div class={styles.trace}>
           <strong>Sources</strong>
-          {message.sources.map((source) => (
-            <button
-              type="button"
-              class={styles.sourceButton}
-              onClick={() => openSource(source)}
+          {visibleSources.map((source) => (
+            <SourceButton
+              source={source}
+              expanded={expanded.has(source.source_id)}
+              openSource={openSource}
               key={source.id}
-            >
-              [{source.source_id}] {source.document_name ?? source.source} · score{" "}
-              {source.score?.toFixed(3) ?? "—"}
-            </button>
+            />
           ))}
+          {hiddenSources.length ? (
+            <details>
+              <summary>Checked but not used ({hiddenSources.length})</summary>
+              {hiddenSources.map((source) => (
+                <SourceButton
+                  source={source}
+                  expanded={expanded.has(source.source_id)}
+                  openSource={openSource}
+                  key={source.id}
+                />
+              ))}
+            </details>
+          ) : null}
         </div>
       ) : null}
       {message.trace_events.length ? (
@@ -304,26 +330,91 @@ function Message({
   );
 }
 
+function SourceButton({
+  source,
+  expanded,
+  openSource,
+}: {
+  source: Source;
+  expanded: boolean;
+  openSource: (source: Source) => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      class={styles.sourceButton}
+      onClick={() => openSource(source)}
+    >
+      [{source.source_id}] {source.document_name ?? source.source} · score{" "}
+      {source.score?.toFixed(3) ?? "—"}
+      {expanded ? <span class={styles.readInFull}> · read in full</span> : null}
+    </button>
+  );
+}
+
+function modelsByAgent(events: TraceEvent[]): Map<string, string> {
+  const models = new Map<string, string>();
+  for (const event of events) {
+    if (event.event_type !== "model_call" || !event.agent_name) continue;
+    const model = payloadString(event.payload, "model");
+    if (model && !models.has(event.agent_name)) {
+      models.set(event.agent_name, model);
+    }
+  }
+  return models;
+}
+
+function expandedSourceIds(events: TraceEvent[]): Set<string> {
+  const event = events.find((item) => item.event_type === "source_expansion");
+  const ids = event?.payload.expanded_source_ids;
+  return new Set(Array.isArray(ids) ? ids.map(String) : []);
+}
+
+function payloadString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen: string[] = [];
+  for (const value of values) {
+    if (value && !seen.includes(value)) seen.push(value);
+  }
+  return seen;
+}
+
 function citationContent(
   message: ChatMessage,
   openSource: (source: Source) => void,
 ): ComponentChildren {
-  return message.content.split(/(\[S\d+\])/g).map((part, index) => {
-    const match = part.match(/^\[(S\d+)\]$/);
-    if (!match) return part;
-    const source = message.sources.find((item) => item.source_id === match[1]);
-    if (!source) return part;
-    return (
-      <button
-        type="button"
-        class={styles.citation}
-        onClick={() => openSource(source)}
-        key={`${part}-${index}`}
-      >
-        {part}
-      </button>
-    );
-  });
+  return message.content
+    .split(/(\[[^\]]*?S\d+[^\]]*?\])/g)
+    .map((part, index) => {
+      if (!/^\[[^\]]*?S\d+[^\]]*?\]$/.test(part)) return part;
+      return (
+        <span key={`cite-${index}`}>
+          {part.split(/(S\d+)/g).map((token, tokenIndex) => {
+            const source = /^S\d+$/.test(token)
+              ? message.sources.find((item) => item.source_id === token)
+              : null;
+            if (!source) return token;
+            return (
+              <button
+                type="button"
+                class={styles.citation}
+                onClick={() => openSource(source)}
+                key={`cite-${index}-${tokenIndex}`}
+              >
+                {token}
+              </button>
+            );
+          })}
+        </span>
+      );
+    });
 }
 
 function Trace({
@@ -344,6 +435,9 @@ function Trace({
           </div>
           <span class={styles.muted}>
             {event.phase} · {event.agent_name ?? "system"}
+            {payloadString(event.payload, "model")
+              ? ` · ${payloadString(event.payload, "model")}`
+              : ""}
             {event.tool_name ? ` · ${event.tool_name}` : ""}
           </span>
           {Object.keys(event.payload).length ? (

@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from agents.citations import cited_source_ids
 from agents.models import AgentSource, AgentTraceEvent
 from backend.chat_models import (
     ChatConversationDetail,
@@ -402,6 +403,7 @@ def _message_view(
     *,
     trace_events: tuple[ChatTraceEventView, ...] = (),
 ) -> ChatMessageView:
+    cited = cited_source_ids(message.content)
     return ChatMessageView(
         id=message.id,
         role=message.role,
@@ -409,7 +411,10 @@ def _message_view(
         sequence=message.sequence,
         insufficient_context=message.insufficient_context,
         created_at=message.created_at,
-        sources=tuple(_source_view(source) for source in message.sources),
+        sources=tuple(
+            _source_view(source, used=source.source_id in cited)
+            for source in message.sources
+        ),
         trace_events=trace_events,
     )
 
@@ -424,7 +429,7 @@ def _trace_events_for_message(
     return tuple(_trace_event_view(event) for event in run.trace_events)
 
 
-def _source_view(source: ChatMessageSource) -> ChatSourceView:
+def _source_view(source: ChatMessageSource, *, used: bool = False) -> ChatSourceView:
     return ChatSourceView(
         id=source.id,
         source_id=source.source_id,
@@ -440,6 +445,7 @@ def _source_view(source: ChatMessageSource) -> ChatSourceView:
         retrieval_query=source.retrieval_query,
         score=source.score,
         excerpt=source.excerpt,
+        used=used,
     )
 
 

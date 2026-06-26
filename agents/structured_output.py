@@ -59,6 +59,26 @@ class TaskPlanPayload(StrictPayload):
         )
 
 
+class DocumentExpansionPayload(StrictPayload):
+    source_ids: list[str] = Field(default_factory=list)
+
+    def to_domain(
+        self,
+        *,
+        valid_source_ids: set[str],
+        max_documents: int,
+    ) -> tuple[str, ...]:
+        selected: list[str] = []
+        for value in self.source_ids:
+            item = value.strip()
+            if not item or item not in valid_source_ids or item in selected:
+                continue
+            selected.append(item)
+            if len(selected) >= max_documents:
+                break
+        return tuple(selected)
+
+
 class ConsultationReportPayload(StrictPayload):
     findings: list[str] = Field(min_length=1)
     evidence: list[str] = Field(default_factory=list)

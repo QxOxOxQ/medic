@@ -8,11 +8,10 @@ from rag.document_preparation import prepare_documents
 from rag.full_process import FullProcess
 from rag.setup_project import setup_project
 
-_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s - %(message)s"
-
-
 def _configure_logging() -> None:
-    logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
+    from observability.logging_config import configure_logging
+
+    configure_logging()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -176,7 +175,12 @@ def main(argv: list[str] | None = None) -> int:
 
         from dashboard.app import create_app
 
-        uvicorn.run(create_app(), host=args.host, port=args.port)
+        uvicorn.run(
+            create_app(),
+            host=args.host,
+            port=args.port,
+            log_config=None,
+        )
         return 0
 
     parser.print_help()

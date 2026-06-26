@@ -22,6 +22,7 @@ class ChatSourceView:
     retrieval_query: str | None
     score: float | None
     excerpt: str
+    used: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -39,6 +40,7 @@ class ChatSourceView:
             "retrieval_query": self.retrieval_query,
             "score": self.score,
             "excerpt": self.excerpt,
+            "used": self.used,
         }
 
 
@@ -76,6 +78,8 @@ def _trace_phase(event: ChatTraceEventView) -> str:
         return "coordinator"
     if event.event_type == "tool_call":
         return "retrieval"
+    if event.event_type == "source_expansion":
+        return "expansion"
     if event.event_type == "review":
         return "review"
     if event.event_type == "synthesis":

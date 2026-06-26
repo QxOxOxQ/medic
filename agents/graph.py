@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
+
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents.contracts import (
@@ -10,6 +13,7 @@ from agents.contracts import (
     SpecialistTask,
 )
 from agents.model_gateway import AgentModelGateway
+from agents.model_router import RoutedModel
 from agents.models import (
     AgentAnswer,
     AgentExecutionError,
@@ -18,11 +22,12 @@ from agents.models import (
     UnknownAgentError,
 )
 from agents.observability import AgentObservability, NullAgentObservability
-from agents.ports import MedicalDocumentSearchPort
+from agents.ports import FullDocumentReader, MedicalDocumentSearchPort
 from agents.professor import (
     MedicalContextCollector,
     ProfessorResearchPlanner,
     ProfessorReviewer,
+    ProfessorSourceExpander,
     ProfessorSynthesizer,
     ProfessorTaskPlanner,
     insufficient_reason,
@@ -34,6 +39,8 @@ from agents.trace import AgentTraceRecorder
 
 AGENT_PROMPT_VERSION = "agents-v2"
 
+logger = logging.getLogger("medic.agents.graph")
+
 
 class AgentGraph:
     def __init__(
@@ -44,9 +51,13 @@ class AgentGraph:
         max_retrieval_queries: int = 6,
         max_consultations: int = 4,
         max_review_rounds: int = 3,
+        max_full_documents: int = 3,
         registry: AgentRegistry | None = None,
         trace_recorder: AgentTraceRecorder | None = None,
         observability: AgentObservability | None = None,
+        full_document_reader: FullDocumentReader | None = None,
+        model_overrides: Mapping[str, RoutedModel] | None = None,
+        default_label: str | None = None,
     ) -> None:
         _validate_limits(
             max_retrieval_queries=max_retrieval_queries,
@@ -63,6 +74,8 @@ class AgentGraph:
             chat_model=chat_model,
             observability=self._observability,
             trace_recorder=self._trace_recorder,
+            model_overrides=model_overrides,
+            default_label=default_label,
         )
         self._research_planner = ProfessorResearchPlanner(
             model_gateway=model_gateway,
@@ -73,6 +86,18 @@ class AgentGraph:
             search_port=search_port,
             trace_recorder=self._trace_recorder,
             max_queries=max_retrieval_queries,
+        )
+        self._source_expander = (
+            ProfessorSourceExpander(
+                model_gateway=model_gateway,
+                professor_prompt=self._registry.professor_prompt,
+                full_document_reader=full_document_reader,
+                context_collector=self._context_collector,
+                trace_recorder=self._trace_recorder,
+                max_documents=max_full_documents,
+            )
+            if full_document_reader is not None
+            else None
         )
         self._task_planner = ProfessorTaskPlanner(
             model_gateway=model_gateway,
@@ -120,6 +145,7 @@ class AgentGraph:
             self._registry.canonical_name(request.requested_agent)
         research_plan = self._research_planner.plan(request)
         sources = self._initial_sources(research_plan)
+        sources = self._expand_full_documents(request, sources)
         if self._requires_no_consultation(research_plan, sources):
             return self._direct_professor_answer(
                 request,
@@ -127,11 +153,23 @@ class AgentGraph:
                 sources=sources,
             )
 
-        tasks = self._task_planner.plan(
-            request,
-            research_plan=research_plan,
-            sources=sources,
-        )
+        try:
+            tasks = self._task_planner.plan(
+                request,
+                research_plan=research_plan,
+                sources=sources,
+            )
+        except AgentExecutionError as error:
+            logger.warning(
+                "Specialist planning failed (%s); answering directly from records",
+                error,
+            )
+            self._record_planning_fallback(error)
+            return self._direct_professor_answer(
+                request,
+                research_plan=research_plan,
+                sources=sources,
+            )
         self._record_coordination(research_plan, tasks=tasks)
         initial_tasks = tasks[: self._max_consultations]
         consultations = self._dispatcher.dispatch(
@@ -177,6 +215,16 @@ class AgentGraph:
         if research_plan.mode != "record_grounded":
             return ()
         return self._context_collector.collect(research_plan.queries)
+
+    def _expand_full_documents(
+        self,
+        request: AgentRequest,
+        sources: tuple[AgentSource, ...],
+    ) -> tuple[AgentSource, ...]:
+        if self._source_expander is None or not sources:
+            return sources
+        self._source_expander.expand(request)
+        return self._context_collector.sources()
 
     @staticmethod
     def _requires_no_consultation(
@@ -427,6 +475,15 @@ class AgentGraph:
                     for task in tasks
                 ],
             },
+        )
+
+    def _record_planning_fallback(self, error: Exception) -> None:
+        self._trace_recorder.record(
+            event_type="coordinator",
+            title="Specialist planning unavailable; answered directly from records",
+            status="degraded",
+            agent_name="professor",
+            payload={"reason": str(error)},
         )
 
     def _record_review(

@@ -55,6 +55,37 @@ class RecordingAgentRunner:
         )
 
 
+class TwoSourceAgentRunner:
+    """Returns an answer that cites only one of its two retrieved sources."""
+
+    def answer(self, request: AgentRequest) -> AgentAnswer:
+        del request
+        return AgentAnswer(
+            answer="Grounded on [S1] only.",
+            agents=(),
+            sources=(
+                AgentSource(
+                    id="S1",
+                    source="a.md",
+                    content_hash="hash-a",
+                    document_name="A.pdf",
+                    score=0.92,
+                    excerpt="Cited record.",
+                ),
+                AgentSource(
+                    id="S2",
+                    source="b.md",
+                    content_hash="hash-b",
+                    document_name="B.pdf",
+                    score=0.40,
+                    excerpt="Checked but unused record.",
+                ),
+            ),
+            insufficient_context=False,
+            trace_events=(),
+        )
+
+
 class RecordingAgentRunnerFactory:
     def __init__(self, runner: RecordingAgentRunner) -> None:
         self._runner = runner
@@ -163,6 +194,22 @@ def test_chat_conversation_can_be_created_loaded_and_continued(tmp_path: Path) -
     assert runner.requests[0].execution_id != runner.requests[1].execution_id
     assert runner.requests[1].conversation_messages[0].role == "user"
     assert runner.requests[1].conversation_messages[1].role == "assistant"
+
+
+def test_chat_conversation_marks_only_cited_sources_as_used(tmp_path: Path) -> None:
+    client = _client(tmp_path, runner=TwoSourceAgentRunner())  # type: ignore[arg-type]
+    _login(client)
+
+    created = client.post(
+        "/api/chat/conversations",
+        json={"question": "Compare A and B"},
+    )
+
+    assert created.status_code == 200
+    assistant = created.json()["conversation"]["messages"][1]
+    by_id = {source["source_id"]: source for source in assistant["sources"]}
+    assert by_id["S1"]["used"] is True
+    assert by_id["S2"]["used"] is False
 
 
 def test_chat_conversation_is_scoped_to_logged_in_user(tmp_path: Path) -> None:

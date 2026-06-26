@@ -33,6 +33,7 @@ class AgentSource:
     char_start: int | None = None
     char_end: int | None = None
     retrieval_query: str | None = None
+    full_content: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -40,13 +41,19 @@ class AgentSource:
             payload["document_id"] = str(self.document_id)
         return payload
 
-    def prompt_block(self) -> str:
+    def prompt_block(self, *, full: bool = True) -> str:
         source = self.document_name or self.source or "unknown"
+        content = self.excerpt
+        content_type = "excerpt"
+        if full and self.full_content:
+            content = self.full_content
+            content_type = "full_document"
         return (
             f'<untrusted_source id="{self.id}">\n'
             f"source_name: {escape(source)}\n"
+            f"content_type: {content_type}\n"
             "content:\n"
-            f"{escape(self.excerpt)}\n"
+            f"{escape(content)}\n"
             "</untrusted_source>"
         )
 

@@ -388,6 +388,27 @@ def test_professor_routes_from_semantic_plan_after_retrieval() -> None:
     assert "source_name: Knee MRI" in _message_text(task_call)
 
 
+def test_graph_answers_directly_when_specialist_planning_fails() -> None:
+    retriever = RecordingRetriever([_source_result()])
+    invalid_task = _task(source_ids=("S99",))
+    model = ScriptedChatModel(
+        structured_responses={
+            ResearchPlanPayload: [_research_plan()],
+            TaskPlanPayload: [_task_plan(invalid_task), _task_plan(invalid_task)],
+        },
+        text_responses=[AIMessage(content="Odpowiedź na podstawie rekordów [S1].")],
+    )
+    graph = _graph(chat_model=model, retriever=retriever)
+
+    answer = graph.answer(AgentRequest(question="Jak zoperowac kolano?"))
+
+    assert "[S1]" in answer.answer
+    assert answer.agents == ()
+    degraded = [event for event in answer.trace_events if event.status == "degraded"]
+    assert degraded
+    assert "unavailable source" in str(degraded[0].payload["reason"])
+
+
 def test_task_plan_prompt_requests_clinical_domain_match() -> None:
     retriever = RecordingRetriever([_source_result()])
     model = _standard_model()
@@ -808,7 +829,7 @@ def test_final_answer_retries_unknown_citation() -> None:
     assert "unavailable source IDs" in _message_text(text_calls[1])
 
 
-def test_final_answer_rejects_missing_citations_after_retry() -> None:
+def test_final_answer_returns_best_effort_when_uncited_after_retries() -> None:
     retriever = RecordingRetriever([_source_result()])
     model = _standard_model(
         final_answer="Answer without a citation.",
@@ -819,8 +840,12 @@ def test_final_answer_rejects_missing_citations_after_retry() -> None:
     )
     graph = _graph(chat_model=model, retriever=retriever)
 
-    with pytest.raises(AgentExecutionError, match="must cite"):
-        graph.answer(AgentRequest(question="Explain the MRI."))
+    answer = graph.answer(AgentRequest(question="Explain the MRI."))
+
+    assert answer.answer == "Yet again no citation."
+    assert answer.insufficient_context is True
+    text_calls = [call for call in model.calls if call["kind"] == "text"]
+    assert len(text_calls) == 3
 
 
 def test_task_plan_recovers_when_model_picks_unknown_specialist() -> None:

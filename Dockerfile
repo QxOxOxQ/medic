@@ -71,8 +71,8 @@ COPY --chown=medic:medic observability ./observability
 COPY --chown=medic:medic rag ./rag
 COPY --chown=medic:medic tools ./tools
 
-RUN mkdir -p /app/data \
-    && chown medic:medic /app/data
+RUN mkdir -p /app/data /app/logs \
+    && chown medic:medic /app/data /app/logs
 
 USER medic:medic
 

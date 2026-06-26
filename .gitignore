@@ -29,5 +29,8 @@ data/evaluation/
 data/parsed/
 data/raw/
 data/ingestion_manifest.json
+
+# Application logs
+logs/
 .aider*
 sk-*

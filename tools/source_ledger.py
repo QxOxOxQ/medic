@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 from agents.models import AgentSource
 from rag.retrieval import SearchResult
@@ -51,6 +52,13 @@ class SourceLedger:
 
     def sources(self) -> tuple[AgentSource, ...]:
         return tuple(self._sources)
+
+    def attach_full_content(self, *, source_id: str, full_content: str) -> None:
+        for index, source in enumerate(self._sources):
+            if source.id == source_id:
+                self._sources[index] = replace(source, full_content=full_content)
+                return
+        raise KeyError(source_id)
 
     def _source_by_id(self, source_id: str) -> AgentSource:
         for source in self._sources:

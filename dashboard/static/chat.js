@@ -147,7 +147,11 @@ window.MedicDashboard.chat = (() => {
     for (const message of messages) {
       appendMessage(message);
     }
-    renderSources(lastAssistantSources(messages));
+    const lastAssistant = lastAssistantMessage(messages);
+    renderSources(
+      lastAssistant ? lastAssistant.sources || [] : [],
+      expandedSourceIdSet(lastAssistant),
+    );
     renderConversationListSelection();
     if (sourceId) {
       openSourceDrawer(sourceId, sourceRecordId);
@@ -200,20 +204,54 @@ window.MedicDashboard.chat = (() => {
   }
 
   function agentLabels(traceEvents) {
+    const modelByAgent = modelByAgentMap(traceEvents);
     const coordinator = traceEvents.find(
       (event) => event.event_type === "coordinator",
     );
-    const agents = coordinator?.payload?.selected_agents || [];
+    const specialists = coordinator?.payload?.selected_agents || [];
+    const agents = uniqueAgents([
+      ...(modelByAgent.professor ? ["professor"] : []),
+      ...specialists,
+    ]);
     if (!agents.length) {
       return "";
     }
     const labels = agents
-      .map(
-        (agent) =>
-          `<span class="agent-label">${formatting.escapeHtml(agentLabel(agent))}</span>`,
-      )
+      .map((agent) => agentChip(agent, modelByAgent))
       .join("");
     return `<div class="agent-labels">${labels}</div>`;
+  }
+
+  function uniqueAgents(agents) {
+    const seen = [];
+    for (const agent of agents) {
+      if (agent && !seen.includes(agent)) {
+        seen.push(agent);
+      }
+    }
+    return seen;
+  }
+
+  function modelByAgentMap(traceEvents) {
+    const map = {};
+    for (const event of traceEvents) {
+      if (event.event_type !== "model_call" || !event.agent_name) {
+        continue;
+      }
+      const model = event.payload && event.payload.model;
+      if (model && !map[event.agent_name]) {
+        map[event.agent_name] = model;
+      }
+    }
+    return map;
+  }
+
+  function agentChip(agent, modelByAgent) {
+    const model = modelByAgent[agent];
+    const modelHtml = model
+      ? `<span class="agent-model">${formatting.escapeHtml(model)}</span>`
+      : "";
+    return `<span class="agent-label">${formatting.escapeHtml(agentLabel(agent))}${modelHtml}</span>`;
   }
 
   function agentLabel(agent) {
@@ -249,6 +287,7 @@ window.MedicDashboard.chat = (() => {
         </div>
         <div class="trace-meta">
           ${traceMeta(i18n.t("chat.traceAgent"), event.agent_name)}
+          ${traceMeta(i18n.t("chat.traceModel"), event.payload && event.payload.model)}
           ${traceMeta(i18n.t("chat.traceTool"), event.tool_name)}
           ${tracePayload(event.payload || {})}
         </div>
@@ -273,18 +312,23 @@ window.MedicDashboard.chat = (() => {
 
   function linkifyCitations(text, sources) {
     const escaped = formatting.escapeHtml(text);
-    return escaped.replace(/\[(S\d+)\]/g, (match, sourceId) => {
-      const source = findSourceInList(sourceId, sources);
-      if (!source) {
-        return match;
+    return escaped.replace(/\[[^\]]*?\]/g, (group) => {
+      if (!/S\d+/.test(group)) {
+        return group;
       }
-      const escapedSourceId = formatting.escapeHtml(sourceId);
-      const escapedRecordId = formatting.escapeHtml(sourceRecordKey(source));
-      return `<button class="citation-button" type="button" data-source-id="${escapedSourceId}" data-source-record-id="${escapedRecordId}">[${escapedSourceId}]</button>`;
+      return group.replace(/S\d+/g, (sourceId) => {
+        const source = findSourceInList(sourceId, sources);
+        if (!source) {
+          return sourceId;
+        }
+        const escapedSourceId = formatting.escapeHtml(sourceId);
+        const escapedRecordId = formatting.escapeHtml(sourceRecordKey(source));
+        return `<button class="citation-button" type="button" data-source-id="${escapedSourceId}" data-source-record-id="${escapedRecordId}">${escapedSourceId}</button>`;
+      });
     });
   }
 
-  function renderSources(sources) {
+  function renderSources(sources, expandedIds = new Set()) {
     const { elements } = window.MedicDashboard;
     if (!sources.length) {
       elements.chatSources.innerHTML =
@@ -292,18 +336,42 @@ window.MedicDashboard.chat = (() => {
       return;
     }
 
-    const items = sources.map(sourceItem).join("");
+    const used = sources.filter((source) => source.used);
+    const visible = used.length ? used : sources;
+    const hidden = used.length ? sources.filter((source) => !source.used) : [];
+    const items = visible
+      .map((source) => sourceItem(source, expandedIds))
+      .join("");
     elements.chatSources.innerHTML = `
       <div class="subpanel-header">
         <h3>${formatting.escapeHtml(i18n.t("chat.sources"))}</h3>
-        <span>${formatting.escapeHtml(sourceCountLabel(sources.length))}</span>
+        <span>${formatting.escapeHtml(sourceCountLabel(visible.length))}</span>
       </div>
       <div class="source-list">${items}</div>
+      ${unusedSourcesSection(hidden, expandedIds)}
     `;
   }
 
-  function sourceItem(source) {
+  function unusedSourcesSection(sources, expandedIds) {
+    if (!sources.length) {
+      return "";
+    }
+    const items = sources
+      .map((source) => sourceItem(source, expandedIds))
+      .join("");
+    return `
+      <details class="trace-details unused-sources">
+        <summary>${formatting.escapeHtml(i18n.t("chat.unusedSources", { count: sources.length }))}</summary>
+        <div class="source-list">${items}</div>
+      </details>
+    `;
+  }
+
+  function sourceItem(source, expandedIds = new Set()) {
     const id = sourceKey(source);
+    const readInFull = expandedIds.has(id)
+      ? `<span class="source-flag">${formatting.escapeHtml(i18n.t("chat.readInFull"))}</span>`
+      : "";
     return `
       <article class="source-row">
         <div class="source-meta">
@@ -315,6 +383,7 @@ window.MedicDashboard.chat = (() => {
           >${formatting.escapeHtml(id || "-")}</button>
           <span>${formatting.escapeHtml(source.document_name || source.source || i18n.t("chat.unknownSource"))}</span>
           <span>${scoreLabel(source.score)}</span>
+          ${readInFull}
           <code>${formatting.escapeHtml(formatting.shortHash(source.content_hash))}</code>
         </div>
         <p>${formatting.escapeHtml(source.excerpt || "")}</p>
@@ -322,13 +391,23 @@ window.MedicDashboard.chat = (() => {
     `;
   }
 
-  function lastAssistantSources(messages) {
+  function lastAssistantMessage(messages) {
     for (const message of [...messages].reverse()) {
       if (message.role === "assistant") {
-        return message.sources || [];
+        return message;
       }
     }
-    return [];
+    return null;
+  }
+
+  function expandedSourceIdSet(message) {
+    const events = (message && message.trace_events) || [];
+    const event = events.find(
+      (item) => item.event_type === "source_expansion",
+    );
+    return new Set(
+      (event && event.payload && event.payload.expanded_source_ids) || [],
+    );
   }
 
   function conversationStateKey(conversation) {

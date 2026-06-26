@@ -435,6 +435,11 @@
           "source_id": {
             "title": "Source Id",
             "type": "string"
+          },
+          "used": {
+            "default": false,
+            "title": "Used",
+            "type": "boolean"
           }
         },
         "required": [

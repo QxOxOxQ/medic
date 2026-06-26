@@ -110,6 +110,12 @@ class RagSearchTool:
     def sources(self) -> tuple[AgentSource, ...]:
         return self._source_ledger.sources()
 
+    def attach_full_content(self, *, source_id: str, full_content: str) -> None:
+        self._source_ledger.attach_full_content(
+            source_id=source_id,
+            full_content=full_content,
+        )
+
     def to_langchain_tool(self) -> StructuredTool:
         default_limit = self._default_limit
 
@@ -171,3 +177,6 @@ class ObservedRagSearchPort:
 
     def sources(self) -> tuple[AgentSource, ...]:
         return self._tool.sources()
+
+    def attach_full_content(self, *, source_id: str, full_content: str) -> None:
+        self._tool.attach_full_content(source_id=source_id, full_content=full_content)
