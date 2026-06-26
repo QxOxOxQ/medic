@@ -47,10 +47,13 @@ runtime environment.
 published directly on port `8000` and served over plain HTTP at
 `http://<public-ip>:8000/`. Because traffic is unencrypted,
 `MEDIC_DASHBOARD_COOKIE_SECURE` is `false` (Secure cookies require HTTPS); put a
-reverse proxy with a real domain in front to re-enable TLS. The public
-repository only verifies and publishes the runtime image. Deployment runs
-manually from the private `QxOxOxQ/medic-deploy` repository so public pull
-requests cannot reach the self-hosted runner.
+reverse proxy with a real domain in front to re-enable TLS. Pushing to `main`
+runs the `deploy` job in `.github/workflows/ci.yml`, which builds and publishes
+the runtime image and then deploys it on the self-hosted runner using the
+built-in `GITHUB_TOKEN`. Keeping deployment in this public repository is safe
+because the `deploy` job runs only on pushes to `main` and the self-hosted
+runner is used exclusively by that job, so pull-request code only ever runs on
+disposable GitHub-hosted runners.
 
 Keep `/opt/medic/.env` on the OCI host and set at least:
 
@@ -70,17 +73,19 @@ If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
 
 The OCI Network Security Group attached to the instance must allow ingress from
-`0.0.0.0/0` to TCP port `8000`. The **Deploy OCI** workflow opens the matching
-host `firewalld` rule automatically.
+`0.0.0.0/0` to TCP port `8000`. The `deploy` job opens the matching host
+`firewalld` rule automatically.
 
 ### OCI GitHub Actions runner service
 
-Register the runner against the private `QxOxOxQ/medic-deploy` repository, not
-this public repository. Trigger its **Deploy OCI** workflow manually and provide
-the immutable image tag produced here, for example `sha-<40-character-commit>`.
+Register the runner against this `QxOxOxQ/medic` repository (Settings → Actions →
+Runners → New self-hosted runner, Linux x64) with the default `self-hosted`,
+`Linux`, `X64` labels. The `deploy` job targets those labels and deploys the
+image built in the same run (`ghcr.io/qxoxoxq/medic:sha-<40-character-commit>`)
+automatically on every push to `main`.
 
-Install the already configured self-hosted runner as a `systemd` service so it
-starts after VM reboots and remains available after the SSH session closes:
+Install the self-hosted runner as a `systemd` service so it starts after VM
+reboots and remains available after the SSH session closes:
 
 ```bash
 cd /opt/github-actions-runner

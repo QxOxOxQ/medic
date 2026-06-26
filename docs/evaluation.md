@@ -44,5 +44,5 @@ The repository must define these Actions secrets:
 `OPENROUTER_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `LANGFUSE_PUBLIC_KEY`,
 `LANGFUSE_SECRET_KEY`, and `LANGFUSE_BASE_URL`.
 
-Evaluation is independent from the **Deploy OCI** workflow and does not run
-automatically during deployment.
+Evaluation is independent from the `deploy` job and does not run automatically
+during deployment.
