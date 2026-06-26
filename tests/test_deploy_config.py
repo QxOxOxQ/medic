@@ -82,6 +82,10 @@ def test_ci_workflow_verifies_and_publishes_image() -> None:
     assert "pull_request:" in workflow
     assert "push:" in workflow
     assert "pull_request_target" not in workflow
+    # Documentation-only pushes skip the build/deploy pipeline.
+    assert "paths-ignore:" in workflow
+    assert '- "**.md"' in workflow
+    assert '- "docs/**"' in workflow
     assert "ghcr.io" in workflow
     assert "IMAGE_NAME: qxoxoxq/medic" in workflow
     assert 'node-version: "24"' in workflow
