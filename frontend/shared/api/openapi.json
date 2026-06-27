@@ -122,6 +122,68 @@
         "title": "ChatMessageDto",
         "type": "object"
       },
+      "ChatModelOptionDto": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "model_id"
+        ],
+        "title": "ChatModelOptionDto",
+        "type": "object"
+      },
+      "ChatModelSelectionRequest": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "ChatModelSelectionRequest",
+        "type": "object"
+      },
+      "ChatModelSettingsResponse": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ChatModelOptionDto"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "options",
+          "selected"
+        ],
+        "title": "ChatModelSettingsResponse",
+        "type": "object"
+      },
       "ChatRunCreateRequest": {
         "properties": {
           "conversation_id": {
@@ -2913,6 +2975,60 @@
           }
         },
         "summary": "Search"
+      }
+    },
+    "/api/settings/chat-model": {
+      "get": {
+        "operationId": "get_chat_model_setting_api_settings_chat_model_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatModelSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Chat Model Setting"
+      },
+      "put": {
+        "operationId": "update_chat_model_setting_api_settings_chat_model_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatModelSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatModelSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Chat Model Setting"
       }
     },
     "/api/status": {

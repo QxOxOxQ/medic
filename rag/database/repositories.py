@@ -93,6 +93,19 @@ class UserRepository:
             .limit(1)
         )
 
+    def set_preferred_chat_model(
+        self,
+        *,
+        user_id: UUID,
+        model_key: str,
+    ) -> User | None:
+        user = self.get_by_id(user_id)
+        if user is None:
+            return None
+        user.preferred_chat_model = model_key
+        self._session.flush()
+        return user
+
 class DocumentRepository:
     def __init__(self, session: Session) -> None:
         self._session = session

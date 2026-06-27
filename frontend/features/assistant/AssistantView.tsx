@@ -4,6 +4,8 @@ import { navigate } from "../../app/router";
 import { api, jsonRequest } from "../../shared/api/client";
 import type {
   ChatMessage,
+  ChatModelOption,
+  ChatModelSettings,
   ChatRun,
   Conversation,
   ConversationSummary,
@@ -31,6 +33,9 @@ export function AssistantView(): JSX.Element {
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
   const [source, setSource] = useState<Source | null>(null);
   const [connectionWarning, setConnectionWarning] = useState("");
+  const [models, setModels] = useState<ChatModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [savingModel, setSavingModel] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
 
   useEffect(
@@ -39,6 +44,37 @@ export function AssistantView(): JSX.Element {
     },
     [],
   );
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const settings = await api<ChatModelSettings>("/api/settings/chat-model");
+        setModels(settings.options);
+        setSelectedModel(settings.selected);
+      } catch {
+        // A failed preference load should not block the assistant.
+      }
+    })();
+  }, []);
+
+  const changeModel = async (key: string): Promise<void> => {
+    const previous = selectedModel;
+    setSelectedModel(key);
+    setSavingModel(true);
+    try {
+      await api<ChatModelSettings>(
+        "/api/settings/chat-model",
+        jsonRequest("PUT", { key }),
+      );
+    } catch (caught) {
+      setSelectedModel(previous);
+      setError(
+        caught instanceof Error ? caught.message : "Could not save model choice",
+      );
+    } finally {
+      setSavingModel(false);
+    }
+  };
 
   const loadConversations = useCallback(async () => {
     try {
@@ -143,16 +179,36 @@ export function AssistantView(): JSX.Element {
           <h2>Source-grounded assistant</h2>
           <p>Watch agent phases live, then verify every cited chunk.</p>
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            setConversation(null);
-            setLiveTrace([]);
-            setSource(null);
-          }}
-        >
-          New conversation
-        </Button>
+        <div class={styles.headerActions}>
+          {models.length ? (
+            <label class={styles.modelSelect}>
+              <span class={styles.muted}>Model</span>
+              <select
+                value={selectedModel}
+                disabled={savingModel}
+                onChange={(event) =>
+                  void changeModel(event.currentTarget.value)
+                }
+              >
+                {models.map((model) => (
+                  <option value={model.key} key={model.key}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setConversation(null);
+              setLiveTrace([]);
+              setSource(null);
+            }}
+          >
+            New conversation
+          </Button>
+        </div>
       </section>
       {connectionWarning ? (
         <Alert title="Reconnecting">{connectionWarning}</Alert>

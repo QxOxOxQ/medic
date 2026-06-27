@@ -18,6 +18,22 @@ class ChatRunCreateRequest(BaseModel):
     specialist: str | None = None
 
 
+class ChatModelOptionDto(BaseModel):
+    key: str
+    label: str
+    model_id: str
+
+
+class ChatModelSelectionRequest(BaseModel):
+    key: str
+
+
+class ChatModelSettingsResponse(BaseModel):
+    ok: bool = True
+    options: list[ChatModelOptionDto]
+    selected: str
+
+
 class DocumentDeleteRequest(BaseModel):
     document_ids: list[UUID] = Field(min_length=1)
 

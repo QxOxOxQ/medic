@@ -19,6 +19,17 @@ export type WorkspaceOverview =
   components["schemas"]["WorkspaceOverviewResponse"];
 export type Chunk = components["schemas"]["ChunkDto"];
 
+export interface ChatModelOption {
+  key: string;
+  label: string;
+  model_id: string;
+}
+
+export interface ChatModelSettings {
+  options: ChatModelOption[];
+  selected: string;
+}
+
 export interface IndexPoint {
   id: string;
   source: string | null;

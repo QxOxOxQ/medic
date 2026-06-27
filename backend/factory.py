@@ -13,11 +13,16 @@ from agents.trace import AgentTraceSink
 from backend.chat_use_cases import ChatConversationUseCase
 from backend.full_document_reader import ParsedMarkdownDocumentReader
 from backend.use_cases import AnswerQuestionUseCase
-from clients.chat_models import ChatModelFactory, get_chat_model_settings
+from clients.chat_models import (
+    ChatModelFactory,
+    get_chat_model_settings,
+    resolve_chat_model,
+)
 from clients.chat_models.settings import ChatModelSettings
 from rag.retrieval import RetrievalService
 from observability import build_agent_observability
 from rag.database.chat_store import SqlAlchemyChatConversationStore
+from rag.database.repositories import UserRepository
 from tools import ObservedRagSearchPort, RagSearchTool, SourceLedger
 
 
@@ -106,7 +111,14 @@ def _build_agent_graph(
     trace_sink: AgentTraceSink | None = None,
 ) -> AgentGraph:
     chat_settings = get_chat_model_settings()
-    default_model, model_overrides = _build_chat_models(chat_settings)
+    selected_model_id = _selected_model_id(
+        database_session_factory=database_session_factory,
+        owner_user_id=owner_user_id,
+    )
+    default_model, model_overrides = _build_chat_models(
+        chat_settings,
+        override_model_id=selected_model_id,
+    )
     source_ledger = SourceLedger()
     trace_recorder = AgentTraceRecorder(trace_sink)
     rag_tool = RagSearchTool(
@@ -139,19 +151,36 @@ def _build_agent_graph(
         observability=observability,
         full_document_reader=full_document_reader,
         model_overrides=model_overrides,
-        default_label=chat_settings.model,
+        default_label=selected_model_id or chat_settings.model,
     )
+
+
+def _selected_model_id(
+    *,
+    database_session_factory: sessionmaker[Session] | None,
+    owner_user_id: UUID,
+) -> str | None:
+    if database_session_factory is None:
+        return None
+    with database_session_factory() as session:
+        user = UserRepository(session).get_by_id(owner_user_id)
+        preferred_key = user.preferred_chat_model if user is not None else None
+    return resolve_chat_model(preferred_key).model_id
 
 
 def _build_chat_models(
     chat_settings: ChatModelSettings,
+    *,
+    override_model_id: str | None = None,
 ) -> tuple[BaseChatModel, dict[str, RoutedModel]]:
     factory = ChatModelFactory()
-    default_model = factory.create(chat_settings)
-    models_by_id: dict[str, BaseChatModel] = {chat_settings.model: default_model}
+    default_id = override_model_id or chat_settings.model
+    default_model = factory.create(chat_settings, model=default_id)
+    models_by_id: dict[str, BaseChatModel] = {default_id: default_model}
     overrides: dict[str, RoutedModel] = {}
     for role, model_id in chat_settings.agent_models.items():
-        if model_id not in models_by_id:
-            models_by_id[model_id] = factory.create(chat_settings, model=model_id)
-        overrides[role] = RoutedModel(model=models_by_id[model_id], label=model_id)
+        resolved_id = override_model_id or model_id
+        if resolved_id not in models_by_id:
+            models_by_id[resolved_id] = factory.create(chat_settings, model=resolved_id)
+        overrides[role] = RoutedModel(model=models_by_id[resolved_id], label=resolved_id)
     return default_model, overrides

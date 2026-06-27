@@ -42,6 +42,7 @@ from dashboard.routes import (
     pages,
     pipeline_runs,
     search,
+    settings,
     workspace,
 )
 from dashboard.services.background_executor import ThreadBackgroundExecutor
@@ -173,6 +174,7 @@ def create_app(
     app.include_router(jobs.router)
     app.include_router(pipeline_runs.router)
     app.include_router(chat_runs.router)
+    app.include_router(settings.router)
     app.include_router(workspace.router)
     app.include_router(search.router)
     app.include_router(backend_router)
