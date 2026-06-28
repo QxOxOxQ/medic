@@ -32,5 +32,6 @@ data/ingestion_manifest.json
 
 # Application logs
 logs/
+/benchmark.log
 .aider*
 sk-*

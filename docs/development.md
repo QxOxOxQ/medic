@@ -32,7 +32,7 @@ and dashboard credentials. Important variables:
 OPENROUTER_API_KEY=...
 QdrantURL=https://your-qdrant-cluster-url
 QdrantApiKey=...
-MEDIC_QDRANT_COLLECTION=hybrid_medic_demo_documents
+MEDIC_QDRANT_COLLECTION=hybrid_medic_documents
 MEDIC_EVAL_QDRANT_PREFIX=medic_eval
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=your-langfuse-secret-key
@@ -52,12 +52,11 @@ MEDIC_DASHBOARD_COOKIE_SECURE=false
   container, Docker Compose overrides it to
   `postgresql+psycopg://medic:medic@postgres:5432/medic`.
 - `QdrantURL` must point to a remote or hosted Qdrant deployment. `QdrantApiKey`
-  is required so the demo fails fast when configuration is incomplete. The
+  is required so startup fails fast when configuration is incomplete. The
   project intentionally does not start local Qdrant.
-- `MEDIC_QDRANT_COLLECTION` defaults to the demo collection
-  `hybrid_medic_demo_documents`. Use a separate collection for demos so synthetic
-  documents are not mixed with private or development indexes. Compose uses fixed
-  ports `5432` and `8000`.
+- `MEDIC_QDRANT_COLLECTION` selects the Qdrant collection. Use a dedicated
+  collection per environment so documents are not mixed between separate
+  indexes. Compose uses fixed ports `5432` and `8000`.
 
 ## Packaged / demo mode
 
@@ -211,42 +210,26 @@ the admin form are stored as Argon2 hashes. Treat this panel as a technical
 administration tool: direct edits to document, chunk, and chat records do not
 automatically update local PDF files, markdown files, or Qdrant points.
 
-## Demo documents
+## Working with documents
 
-`demo_documents/` contains three synthetic PDFs:
+Log in with the account from `.env`, then in the `Documents` workspace:
 
-- `synthetic_acl_rehab_demo.pdf`
-- `synthetic_psoriasis_treatment_demo.pdf`
-- `synthetic_glp1_remote_monitoring_demo.pdf`
+1. Upload one or more PDFs (`Add PDF`); they appear in the `Documents` table.
+2. Run `Run pipeline` and wait for the final status.
+3. In `Assistant`, ask a question grounded in those documents. Inspect the agent
+   answer, the selected specialist, the `[S1]` citations, the source list, and
+   the source excerpt preview.
 
-To make the demo turn-key instead of uploading by hand, seed the three PDFs for
-the admin user. Either run `uv run python main.py seed-demo` after setup, or start
-Compose with `MEDIC_SEED_DEMO=true` so the `init` service uploads and indexes them
-before the dashboard starts. Seeding is idempotent by filename. For a clean
-rehearsal from an empty index, reset only the demo data volume first (this never
-touches the PostgreSQL volume):
+Each user only ever retrieves their own documents — retrieval and full-document
+reads are filtered by `owner_user_id` at every layer.
 
-```bash
-docker-compose down
-docker volume rm medic_demo_data
-MEDIC_SEED_DEMO=true docker-compose up --build
-```
+### Test fixtures
 
-Suggested 5-minute demo path:
-
-1. Log in with the account from `.env`.
-2. Upload the three synthetic documents and show them in the `Documents` table.
-3. Run `Run pipeline` and wait for the final status.
-4. Ask these questions:
-   - `What are the progression criteria after ACL reconstruction?`
-   - `In the fictional comparison, was phototherapy or biologic treatment better?`
-   - `What changed with remote monitoring in the GLP-1 study?`
-5. Show the agent answer, selected specialist, `[S1]` citations, source list, and
-   source excerpt preview.
-
-`demo_documents/failure_cases/EXPECTED_PARSE_FAILURE_invalid_pdf.pdf` is
-intentionally broken and only supports testing the `failed` status with a
-readable `processing_error`. It is not part of the main demo path.
+`demo_documents/` holds synthetic PDFs used only as fixtures for the RAG quality
+evaluation (`evaluation/`, suite `medical-demo-v1`); they are never seeded into
+the application. `demo_documents/failure_cases/EXPECTED_PARSE_FAILURE_invalid_pdf.pdf`
+is intentionally broken and exercises the `failed` status with a readable
+`processing_error`.
 
 ## Tests
 

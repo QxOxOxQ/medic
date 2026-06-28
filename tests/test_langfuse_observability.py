@@ -73,8 +73,13 @@ class FakeChatModel:
 
 
 class FakeChatModelFactory:
-    def create(self, settings: ChatModelSettings) -> FakeChatModel:
-        del settings
+    def create(
+        self,
+        settings: ChatModelSettings | None = None,
+        *,
+        model: str | None = None,
+    ) -> FakeChatModel:
+        del settings, model
         return FakeChatModel()
 
 

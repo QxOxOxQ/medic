@@ -81,7 +81,7 @@ export function RetrievalView(): JSX.Element {
             <input
               class={styles.input}
               value={query}
-              placeholder="e.g. ACL progression criteria"
+              placeholder="Search your indexed documents"
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
           </label>

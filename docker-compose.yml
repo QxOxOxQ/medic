@@ -3,7 +3,7 @@ x-app-environment: &app-environment
   OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
   QdrantURL: "${QdrantURL:?QdrantURL is required}"
   QdrantApiKey: "${QdrantApiKey:?QdrantApiKey is required}"
-  MEDIC_QDRANT_COLLECTION: "${MEDIC_QDRANT_COLLECTION:-hybrid_medic_demo_documents}"
+  MEDIC_QDRANT_COLLECTION: "${MEDIC_QDRANT_COLLECTION:-hybrid_medic_documents}"
   MEDIC_EVAL_QDRANT_PREFIX: "${MEDIC_EVAL_QDRANT_PREFIX:-medic_eval}"
   MEDIC_EVAL_JUDGE_MODEL: "${MEDIC_EVAL_JUDGE_MODEL:-openai/gpt-4.1-mini}"
   MEDIC_EVAL_EMBEDDING_MODEL: "${MEDIC_EVAL_EMBEDDING_MODEL:-openai/text-embedding-3-small}"
@@ -15,7 +15,6 @@ x-app-environment: &app-environment
   MEDIC_LANGFUSE_ENVIRONMENT: "${MEDIC_LANGFUSE_ENVIRONMENT:-development}"
   MEDIC_LANGFUSE_SAMPLE_RATE: "${MEDIC_LANGFUSE_SAMPLE_RATE:-1.0}"
   MEDIC_LANGFUSE_CAPTURE_CONTENT: "${MEDIC_LANGFUSE_CAPTURE_CONTENT:-false}"
-  MEDIC_SEED_DEMO: "${MEDIC_SEED_DEMO:-false}"
   MEDIC_DASHBOARD_USERNAME: "${MEDIC_DASHBOARD_USERNAME:?MEDIC_DASHBOARD_USERNAME is required}"
   MEDIC_DASHBOARD_PASSWORD: "${MEDIC_DASHBOARD_PASSWORD:?MEDIC_DASHBOARD_PASSWORD is required}"
   MEDIC_SESSION_SECRET: "${MEDIC_SESSION_SECRET:?MEDIC_SESSION_SECRET is required}"
@@ -47,10 +46,8 @@ services:
     environment: *app-environment
     volumes:
       - demo_data:/app/data
-      - ./demo_documents:/app/demo_documents:ro
     command: >
-      sh -c "python main.py setup --no-create-env &&
-      if [ \"$${MEDIC_SEED_DEMO:-false}\" = \"true\" ]; then python main.py seed-demo; fi"
+      sh -c "python main.py setup --no-create-env"
 
   app:
     build:

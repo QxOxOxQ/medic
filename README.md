@@ -79,10 +79,10 @@ docker-compose up --build
 ```
 
 Open <http://127.0.0.1:8000/> and log in with the dashboard credentials from
-`.env`. Start Compose with `MEDIC_SEED_DEMO=true` to auto-load three synthetic
-PDFs, run the pipeline, then ask e.g. *"What are the progression criteria after
-ACL reconstruction?"* See [docs/development.md](docs/development.md) for the full
-5-minute demo path.
+`.env`. Upload your own PDFs in the `Documents` workspace, run the pipeline, then
+ask a question grounded in those documents — the answer cites `[S1]`-style
+sources back to your files. See [docs/development.md](docs/development.md) for the
+full local setup and workflows.
 
 ## Tech stack
 
