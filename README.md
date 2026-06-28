@@ -59,13 +59,13 @@ than returning an error.
 | --- | --- |
 | **Multi-agent (Professor + 4 specialists) with a bounded review loop** | Quality through iterative critique, with hard budgets (`max_consultations`, `max_review_rounds`) that cap cost and latency. |
 | **Full-document RAG with agent-selected expansion** | Beats naive chunk RAG — the model promotes a chunk to its whole source document only when it looks load-bearing (`max_full_documents`). |
-| **Hybrid retrieval (dense + BM25, RRF) + binary quantization** | Semantic *and* lexical coverage; `ONE_BIT` quantization keeps search fast and cheap. |
+| **Hybrid retrieval (dense + BM25, RRF) + binary quantization** | Semantic *and* lexical coverage; `ONE_BIT` quantization is a configurable memory/speed tradeoff (swap to scalar for higher recall). |
 | **Per-agent model routing** | Every agent is independently swappable for cost/specialization via `AgentModelGateway` (config in `rag/settings.json`). |
 | **Fail-open resilience** | Planning/review failures return a degraded partial answer with a truthful trace instead of a 500. |
 | **Inline citations + source ledger** | Every claim is traceable; the UI shows which sources were actually used. |
-| **Evaluation as quality gates** | RAGAS metrics + Langfuse, wired to CI exit codes (`0` pass / `1` gate-fail / `2` error). |
+| **Evaluation as quality gates** | RAGAS metrics + Langfuse, run as an automated gate on merge to `main` and nightly, with CI exit codes (`0` pass / `1` gate-fail / `2` error). |
 | **Hexagonal / DDD, `mypy --strict`** | Framework-free domain layer (`agents/contracts.py`) behind ports/adapters; fully type-checked. |
-| **Multi-tenant ownership isolation** | Retrieval and document reads are filtered by `owner_user_id` at every layer. |
+| **Multi-tenant ownership isolation** | Retrieval is scoped by `owner_user_id` pushed down into the Qdrant query (indexed payload field), with a PostgreSQL ownership check as defense-in-depth. |
 
 ## Quickstart
 

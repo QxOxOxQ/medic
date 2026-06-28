@@ -16,7 +16,13 @@ from rag.searcher import Searcher
 
 
 class SearchProvider(Protocol):
-    def search(self, query: str, k: int = 3) -> Any:
+    def search(
+        self,
+        query: str,
+        k: int = 3,
+        *,
+        owner_user_id: UUID | None = None,
+    ) -> Any:
         ...
 
 
@@ -59,7 +65,7 @@ class RetrievalService:
         owner_user_id: UUID | None = None,
     ) -> list[SearchResult]:
         search_provider = self._search_provider or Searcher()
-        response = search_provider.search(query, k=limit)
+        response = search_provider.search(query, k=limit, owner_user_id=owner_user_id)
         return search_results_from_response(
             response,
             limit=limit,

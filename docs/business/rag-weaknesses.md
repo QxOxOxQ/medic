@@ -8,6 +8,8 @@ Zakres dotyczy przeplywu: przygotowanie PDF, chunking, embedding, indeksowanie w
 
 ## 1. Produkcyjny Searcher Nie Uzywa Hybrydowego RRF
 
+**Status (2026-06-28): ROZWIAZANE.** `Searcher.search()` deleguje do `Qdrant.hybrid_search_with_rrf()`, ktory robi dense prefetch + sparse (BM25) prefetch + `Fusion.RRF`. Potwierdzone testem `test_qdrant_hybrid_search_uses_dense_sparse_prefetch_and_rrf`. Opis ponizej zachowany jako kontekst historyczny.
+
 Problem: aplikacja tworzy kolekcje Qdrant z wektorem dense i sparse, a indeksowanie zapisuje oba typy danych, ale glowna sciezka wyszukiwania uzywana przez backend odpytuje tylko dense vector. Metoda hybrydowa z RRF istnieje, lecz nie jest podlaczona do `Searcher`.
 
 Skutek: deklarowana hybrydowosc jest w praktyce niepelna. Zapytania zawierajace rzadkie terminy medyczne, nazwy badan, kody, wartosci laboratoryjne albo konkretne slowa z dokumentu moga miec gorszy recall niz oczekiwany po indeksie dense+sparse.
@@ -32,6 +34,8 @@ Kryteria ukonczenia:
 
 ## 2. Filtrowanie Uzytkownika Dzieje Sie Dopiero Po Wyszukaniu W Qdrant
 
+**Status (2026-06-28): ROZWIAZANE.** Indeksowanie zapisuje `owner_user_id` do payloadu punktu (z indeksem KEYWORD), a `hybrid_search_with_rrf()` naklada `Filter` po `owner_user_id` na kazdy `Prefetch` — filtr jest liczony przed top-k, a nie po nim. Filtrowanie po stronie PostgreSQL zachowano jako druga linie obrony. Izolacje potwierdzono: zapytanie jednego wlasciciela nie zwraca punktow innego, nawet gdy sa najlepszym dopasowaniem semantycznym. Istniejace punkty bez pola sa pomijane (fail-closed) i wymagaja reindeksacji.
+
 Problem: Qdrant zwraca globalne top-k z calej kolekcji, a dopiero potem `RetrievalService` filtruje wyniki przez PostgreSQL i sprawdza, czy punkty naleza do aktualnego uzytkownika.
 
 Skutek: przy wielu uzytkownikach cudze dokumenty moga zajac pierwsze miejsca w top-k. Po odfiltrowaniu backend moze zwrocic malo wynikow albo brak wynikow, mimo ze dokumenty aktualnego uzytkownika zawieraja odpowiedz. To jest problem jakosci retrieval, a nie bezposredni wyciek danych, bo odpowiedzi sa filtrowane przed pokazaniem agentowi.
@@ -55,6 +59,8 @@ Kryteria ukonczenia:
 - Test pokazuje, ze przy cudzych wysoko ocenionych punktach user nadal dostaje swoje wyniki.
 
 ## 3. Brak Oversamplingu Przed Filtrowaniem Wynikow
+
+**Status (2026-06-28): ROZWIAZANE docelowym kierunkiem.** Wprowadzono prefiltracje po `owner_user_id` w Qdrant (patrz #2), wiec kandydaci z prefetch sa juz ograniczeni do wlasciciela i post-filtr DB praktycznie nic nie ucina. Oversampling przestaje byc potrzebny dla problemu izolacji wielu najemcow. Opis ponizej zachowany jako kontekst historyczny.
 
 Problem: `RetrievalService` prosi providera o dokladnie `limit` wynikow, a potem usuwa wyniki nienalezace do uzytkownika. Nie ma zapasu kandydatow przed filtrowaniem.
 
@@ -369,8 +375,8 @@ Kryteria ukonczenia:
 
 ## Proponowana Kolejnosc Prac
 
-1. Naprawic sciezke search: podlaczyc hybrid RRF i dodac testy.
-2. Dodac filtrowanie po uzytkowniku w Qdrant oraz oversampling jako zabezpieczenie przejsciowe.
+1. ~~Naprawic sciezke search: podlaczyc hybrid RRF i dodac testy.~~ ZROBIONE (#1).
+2. ~~Dodac filtrowanie po uzytkowniku w Qdrant~~ ZROBIONE — prefiltracja po `owner_user_id` w Qdrant (#2, #3).
 3. Przygotowac regression set retrieval dla dokumentow demo.
 4. Rozbic `rag/indexer.py` na mniejsze komponenty.
 5. Uporzadkowac architekture portow i adapterow.

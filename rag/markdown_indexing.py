@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from rag.document_preparation import calculate_text_sha256
 from rag.progress import ProgressCallback, ProgressEmitter
@@ -23,11 +24,13 @@ class MarkdownIndexer:
         parsed_markdown_dir: Path,
         indexer: Callable[..., int],
         accepts_progress_callback: bool,
+        owner_user_id: UUID | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self._parsed_markdown_dir = parsed_markdown_dir
         self._indexer = indexer
         self._accepts_progress_callback = accepts_progress_callback
+        self._owner_user_id = owner_user_id
         self._logger = logger or logging.getLogger(__name__)
 
     def index_all(
@@ -151,6 +154,7 @@ class MarkdownIndexer:
                 markdown_file_path=markdown_file_path,
                 source=source,
                 document_content=document_content,
+                owner_user_id=self._owner_user_id,
             ),
         }
         if self._accepts_progress_callback and progress_callback is not None:
@@ -210,9 +214,13 @@ def source_metadata(
     markdown_file_path: Path,
     source: str,
     document_content: str,
+    owner_user_id: UUID | None = None,
 ) -> dict[str, Any]:
-    return {
+    metadata: dict[str, Any] = {
         "file_name": markdown_file_path.name,
         "source": source,
         "content_hash": calculate_text_sha256(document_content),
     }
+    if owner_user_id is not None:
+        metadata["owner_user_id"] = str(owner_user_id)
+    return metadata

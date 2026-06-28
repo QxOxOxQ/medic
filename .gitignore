@@ -33,5 +33,8 @@ data/ingestion_manifest.json
 # Application logs
 logs/
 /benchmark.log
+
+# Generated benchmark artifacts (run rag/measurement to regenerate)
+benchmark_report.md
 .aider*
 sk-*

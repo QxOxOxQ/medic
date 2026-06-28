@@ -8,6 +8,14 @@ on:
         required: true
         default: medical-demo-v1
         type: string
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  schedule:
+    # Nightly post-merge quality gate (04:00 UTC).
+    - cron: "0 4 * * *"
 
 permissions:
   contents: read
@@ -18,7 +26,7 @@ concurrency:
 
 jobs:
   evaluation:
-    name: Evaluate ${{ inputs.suite }}
+    name: Evaluate ${{ inputs.suite || 'medical-demo-v1' }}
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
@@ -35,7 +43,7 @@ jobs:
       MEDIC_LANGFUSE_CAPTURE_CONTENT: "false"
       MEDIC_LANGFUSE_ENVIRONMENT: evaluation-ci
       LANGFUSE_TRACING_ENVIRONMENT: evaluation-ci
-      EVALUATION_SUITE: ${{ inputs.suite }}
+      EVALUATION_SUITE: ${{ inputs.suite || 'medical-demo-v1' }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       QdrantURL: ${{ secrets.QDRANT_URL }}
       QdrantApiKey: ${{ secrets.QDRANT_API_KEY }}

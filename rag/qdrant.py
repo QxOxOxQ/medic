@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
+from uuid import UUID
 
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import CollectionInfo, ScoredPoint
@@ -97,6 +98,11 @@ class Qdrant:
                     )
                 ),
             )
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name=_OWNER_PAYLOAD_FIELD,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
             print(f"Collection {collection_name} created successfully.")
         else:
             collection = self.client.get_collection(collection_name)
@@ -112,6 +118,8 @@ class Qdrant:
         self,
         query_text: str,
         limit: int = 10,
+        *,
+        owner_user_id: UUID | None = None,
     ) -> list[ScoredPoint]:
         embedder = Embedder(
             provider=self.embedding_model_config.provider,
@@ -122,6 +130,7 @@ class Qdrant:
             text=query_text,
             model=self.settings.sparse_vector_model,
         )
+        owner_filter = _owner_filter(owner_user_id)
         response = self.client.query_points(
             collection_name=self.settings.qdrant_collection_name,
             prefetch=[
@@ -129,18 +138,37 @@ class Qdrant:
                     query=query_dense,
                     using=self.settings.dense_vector_name,
                     limit=self.settings.prefetch_limit,
+                    filter=owner_filter,
                 ),
                 models.Prefetch(
                     query=query_sparse,
                     using=self.settings.sparse_vector_name,
                     limit=self.settings.prefetch_limit,
+                    filter=owner_filter,
                 ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
+            query_filter=owner_filter,
             limit=limit,
         )
 
         return response.points
+
+
+_OWNER_PAYLOAD_FIELD = "owner_user_id"
+
+
+def _owner_filter(owner_user_id: UUID | None) -> models.Filter | None:
+    if owner_user_id is None:
+        return None
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key=_OWNER_PAYLOAD_FIELD,
+                match=models.MatchValue(value=str(owner_user_id)),
+            )
+        ]
+    )
 
 
 def _vector_params(model_config: EmbeddingModelConfig) -> models.VectorParams:
@@ -198,8 +226,12 @@ def _validate_collection_vectors(
 def hybrid_search_with_rrf(
     query_text: str,
     limit: int = 10,
+    *,
+    owner_user_id: UUID | None = None,
 ) -> list[ScoredPoint]:
-    return Qdrant().hybrid_search_with_rrf(query_text, limit)
+    return Qdrant().hybrid_search_with_rrf(
+        query_text, limit, owner_user_id=owner_user_id
+    )
 
 
 def create_collections() -> None:

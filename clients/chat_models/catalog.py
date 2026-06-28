@@ -17,6 +17,11 @@ DEEPSEEK = SelectableChatModel(
     label="DeepSeek V3.1",
     model_id="deepseek/deepseek-chat-v3.1",
 )
+DEEPSEEK_V4 = SelectableChatModel(
+    key="deepseek-v4",
+    label="DeepSeek V4",
+    model_id="deepseek/deepseek-v4",
+)
 OPENAI = SelectableChatModel(
     key="openai",
     label="OpenAI GPT-4.1 mini",
@@ -27,8 +32,13 @@ GEMINI = SelectableChatModel(
     label="Gemini 3.5 Flash",
     model_id="google/gemini-3.5-flash",
 )
+CLAUDE_OPUS = SelectableChatModel(
+    key="claude-opus",
+    label="Claude Opus 4.8",
+    model_id="anthropic/claude-opus-4-8",
+)
 
-SELECTABLE_CHAT_MODELS: tuple[SelectableChatModel, ...] = (DEEPSEEK, OPENAI, GEMINI)
+SELECTABLE_CHAT_MODELS: tuple[SelectableChatModel, ...] = (DEEPSEEK, DEEPSEEK_V4, OPENAI, GEMINI, CLAUDE_OPUS)
 DEFAULT_CHAT_MODEL_KEY = OPENAI.key
 
 _MODELS_BY_KEY = {model.key: model for model in SELECTABLE_CHAT_MODELS}

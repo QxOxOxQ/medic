@@ -60,7 +60,9 @@ class FullProcess:
             selected_raw_paths=selected_raw_path_list,
             owner_user_id=owner_user_id,
         )
-        indexing_result = self._markdown_indexer(settings).index_all(
+        indexing_result = self._markdown_indexer(
+            settings, owner_user_id=owner_user_id
+        ).index_all(
             progress=progress,
             progress_callback=progress_callback,
             selected_sources=self._selected_markdown_sources(
@@ -105,12 +107,15 @@ class FullProcess:
     def _markdown_indexer(
         self,
         settings: DocumentPreparationSettings,
+        *,
+        owner_user_id: UUID | None,
     ) -> MarkdownIndexer:
         custom_indexer = self._indexer is not None
         return MarkdownIndexer(
             parsed_markdown_dir=settings.parsed_markdown_dir,
             indexer=self._indexer or index_text,
             accepts_progress_callback=not custom_indexer,
+            owner_user_id=owner_user_id,
             logger=logger,
         )
 

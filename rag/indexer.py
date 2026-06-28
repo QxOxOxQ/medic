@@ -19,6 +19,7 @@ from rag.qdrant import Qdrant
 
 
 _CONTENT_HASH_PAYLOAD_FIELD = "content_hash"
+_OWNER_PAYLOAD_FIELD = "owner_user_id"
 _PREVIEW_CHUNK_LIMIT = 3
 _VECTOR_SAMPLE_SIZE = 12
 logger = logging.getLogger(__name__)
@@ -59,10 +60,12 @@ def index_text(
 
     qdrant = qdrant or Qdrant()
     content_hash = source_metadata.get("content_hash")
+    owner_user_id = _metadata_owner(source_metadata)
     if isinstance(content_hash, str) and _content_hash_exists(
         client=qdrant.client,
         collection_name=qdrant.settings.qdrant_collection_name,
         content_hash=content_hash,
+        owner_user_id=owner_user_id,
     ):
         _sync_indexed_chunks(
             session_factory=database_session_factory,
@@ -490,6 +493,8 @@ def _index_chunks(
         sparse_vector_name=sparse_vector_name,
         sparse_vector_on_disk=sparse_vector_on_disk,
     )
+    if any(chunk.metadata.get(_OWNER_PAYLOAD_FIELD) for chunk in chunks):
+        _ensure_owner_payload_index(client=client, collection_name=collection_name)
 
     points = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
@@ -520,6 +525,7 @@ def _content_hash_exists(
     client: Any,
     collection_name: str,
     content_hash: str,
+    owner_user_id: str | None = None,
 ) -> bool:
     if not client.collection_exists(collection_name):
         return False
@@ -528,21 +534,36 @@ def _content_hash_exists(
         client=client,
         collection_name=collection_name,
     )
+    must: list[models.Condition] = [
+        models.FieldCondition(
+            key=_CONTENT_HASH_PAYLOAD_FIELD,
+            match=models.MatchValue(value=content_hash),
+        )
+    ]
+    if owner_user_id is not None:
+        _ensure_owner_payload_index(
+            client=client,
+            collection_name=collection_name,
+        )
+        must.append(
+            models.FieldCondition(
+                key=_OWNER_PAYLOAD_FIELD,
+                match=models.MatchValue(value=owner_user_id),
+            )
+        )
     records, _ = client.scroll(
         collection_name=collection_name,
-        scroll_filter=models.Filter(
-            must=[
-                models.FieldCondition(
-                    key=_CONTENT_HASH_PAYLOAD_FIELD,
-                    match=models.MatchValue(value=content_hash),
-                )
-            ]
-        ),
+        scroll_filter=models.Filter(must=must),
         limit=1,
         with_payload=False,
         with_vectors=False,
     )
     return bool(records)
+
+
+def _metadata_owner(source_metadata: dict[str, Any]) -> str | None:
+    owner = source_metadata.get(_OWNER_PAYLOAD_FIELD)
+    return owner if isinstance(owner, str) and owner else None
 
 
 _chunks_from_text = chunks_from_text
@@ -606,6 +627,30 @@ def _ensure_content_hash_payload_index(*, client: Any, collection_name: str) -> 
         field_name=_CONTENT_HASH_PAYLOAD_FIELD,
         field_schema=models.PayloadSchemaType.KEYWORD,
     )
+
+
+def _ensure_owner_payload_index(*, client: Any, collection_name: str) -> None:
+    collection = client.get_collection(collection_name)
+    if _payload_schema_has_keyword_index(collection, _OWNER_PAYLOAD_FIELD):
+        return
+
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name=_OWNER_PAYLOAD_FIELD,
+        field_schema=models.PayloadSchemaType.KEYWORD,
+    )
+
+
+def _payload_schema_has_keyword_index(collection: Any, field_name: str) -> bool:
+    payload_schema = getattr(collection, "payload_schema", None) or {}
+    field_schema = payload_schema.get(field_name)
+    if field_schema is None:
+        return False
+
+    data_type = getattr(field_schema, "data_type", field_schema)
+    if isinstance(data_type, list):
+        return any(_is_keyword_payload_schema_type(item) for item in data_type)
+    return _is_keyword_payload_schema_type(data_type)
 
 
 def _payload_schema_has_keyword_content_hash_index(collection: Any) -> bool:
