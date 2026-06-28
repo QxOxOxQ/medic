@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
+import sys
+import types
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +21,35 @@ from evaluation.domain.values import MetricName, Score, SourceKey
 
 logger = logging.getLogger(__name__)
 
+_VERTEXAI_MODULE = "langchain_community.chat_models.vertexai"
+
+
+def _ensure_ragas_importable() -> None:
+    """Register a stand-in for a langchain module ragas still imports eagerly.
+
+    ragas 0.4.3 imports ``langchain_community.chat_models.vertexai.ChatVertexAI``
+    at module load, but that module was dropped from the langchain 1.x community
+    line this project targets (``langchain >= 1.3``). ragas only references the
+    symbol in ``isinstance`` checks to detect a VertexAI judge; here the judge is
+    always an OpenAI model, so an inert placeholder is sufficient and is never
+    instantiated. Installing it lets ragas import without pinning the whole
+    langchain stack back to the 0.3.x line. If a future langchain-community
+    restores the real module, that one is imported instead.
+    """
+    try:
+        importlib.import_module(_VERTEXAI_MODULE)
+        return
+    except ModuleNotFoundError:
+        pass
+
+    shim = types.ModuleType(_VERTEXAI_MODULE)
+
+    class ChatVertexAI:
+        """Inert stand-in; ragas references this type only in isinstance checks."""
+
+    setattr(shim, "ChatVertexAI", ChatVertexAI)
+    sys.modules.setdefault(_VERTEXAI_MODULE, shim)
+
 
 class RagasMetricEvaluator:
     def __init__(
@@ -28,6 +60,7 @@ class RagasMetricEvaluator:
         judge_model: str,
         embedding_model: str,
     ) -> None:
+        _ensure_ragas_importable()
         from ragas.embeddings.base import embedding_factory
         from ragas.embeddings.base import BaseRagasEmbedding
         from ragas.llms import llm_factory

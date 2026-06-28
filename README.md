@@ -5,7 +5,7 @@
 > critiques the result, and every claim is answered with inline citations back to
 > the user's own documents.
 
-Python 3.12 · FastAPI · LangChain/LangGraph · Qdrant (hybrid) · PostgreSQL ·
+Python 3.12 · FastAPI · LangChain · Qdrant (hybrid) · PostgreSQL ·
 Preact/TypeScript · `mypy --strict`
 
 ## What it is
@@ -86,7 +86,7 @@ full local setup and workflows.
 
 ## Tech stack
 
-FastAPI · LangChain / LangGraph · Qdrant (dense + sparse hybrid) · PostgreSQL /
+FastAPI · LangChain · Qdrant (dense + sparse hybrid) · PostgreSQL /
 SQLAlchemy + Alembic · OpenRouter models · FastEmbed · RAGAS + Langfuse ·
 Preact + Vite + TypeScript · Docker. Tooling: `uv`, Ruff, `mypy --strict`,
 pytest, Vitest, Playwright.

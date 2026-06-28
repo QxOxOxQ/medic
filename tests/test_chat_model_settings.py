@@ -64,8 +64,10 @@ def test_chat_model_setting_defaults_to_openai(tmp_path: Path) -> None:
     assert body["selected"] == "openai"
     assert {option["key"] for option in body["options"]} == {
         "deepseek",
+        "deepseek-v4",
         "openai",
         "gemini",
+        "claude-opus",
     }
 
 
