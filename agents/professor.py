@@ -29,6 +29,9 @@ from agents.trace import AgentTraceRecorder
 
 PROFESSOR_AGENT_NAME = "professor"
 RAG_TOOL_NAME = "search_user_medical_documents"
+_RETRIEVAL_FAILURE_MESSAGE = (
+    "Professor document retrieval failed. See server logs for details."
+)
 
 logger = logging.getLogger("medic.agents.professor")
 
@@ -195,15 +198,22 @@ class MedicalContextCollector:
         try:
             self._search_port.search_sources(query=query)
         except Exception as error:
+            logger.error(
+                "Professor document retrieval failed for query %r with %s: %s",
+                query,
+                type(error).__name__,
+                error,
+                exc_info=(type(error), error, error.__traceback__),
+            )
             self._trace_recorder.record(
                 event_type="tool_call",
                 title="Professor document retrieval failed",
                 status="failed",
                 agent_name=PROFESSOR_AGENT_NAME,
                 tool_name=RAG_TOOL_NAME,
-                payload={"query": query, "error": str(error)},
+                payload={"query": query, "error": _RETRIEVAL_FAILURE_MESSAGE},
             )
-            raise AgentExecutionError("Professor document retrieval failed") from error
+            raise AgentExecutionError(_RETRIEVAL_FAILURE_MESSAGE) from error
 
 
 class ProfessorSourceExpander:

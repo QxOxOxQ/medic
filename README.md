@@ -84,6 +84,9 @@ ask a question grounded in those documents — the answer cites `[S1]`-style
 sources back to your files. See [docs/development.md](docs/development.md) for the
 full local setup and workflows.
 
+Detailed runtime errors are written to `logs/medic.log` by default. Set
+`MEDIC_LOG_FILE` to use a different log file path.
+
 ## Tech stack
 
 FastAPI · LangChain · Qdrant (dense + sparse hybrid) · PostgreSQL /

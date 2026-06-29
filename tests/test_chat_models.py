@@ -52,9 +52,9 @@ def test_selectable_chat_models_expose_all_choices() -> None:
     assert keys == {"deepseek", "deepseek-v4", "openai", "gemini", "claude-opus"}
     assert DEFAULT_CHAT_MODEL_KEY == "openai"
     assert resolve_chat_model("deepseek").model_id == "deepseek/deepseek-chat-v3.1"
-    assert resolve_chat_model("deepseek-v4").model_id == "deepseek/deepseek-v4"
+    assert resolve_chat_model("deepseek-v4").model_id == "deepseek/deepseek-v4-pro"
     assert resolve_chat_model("gemini").model_id == "google/gemini-3.5-flash"
-    assert resolve_chat_model("claude-opus").model_id == "anthropic/claude-opus-4-8"
+    assert resolve_chat_model("claude-opus").model_id == "anthropic/claude-opus-4.8"
 
 
 def test_resolve_chat_model_falls_back_to_default_for_unknown_keys() -> None:

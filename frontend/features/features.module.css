@@ -522,6 +522,17 @@
   padding-top: var(--space-3);
 }
 
+.traceError {
+  margin: var(--space-1) 0 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger-200);
+  background: var(--danger-50);
+  padding: var(--space-1) var(--space-2);
+  color: var(--danger-700);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
 .sourceButton {
   border: 0;
   padding: 0;

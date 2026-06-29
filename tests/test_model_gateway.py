@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage
+from pytest import LogCaptureFixture
 
 from agents.model_gateway import AgentModelGateway
 from agents.model_router import RoutedModel
@@ -28,9 +30,16 @@ class _LabeledChatModel:
 class _FlakyChatModel:
     """Chat model stub that fails a fixed number of times before succeeding."""
 
-    def __init__(self, *, failures: int, content: str = "final answer") -> None:
+    def __init__(
+        self,
+        *,
+        failures: int,
+        content: str = "final answer",
+        error_message: str = "Provider returned error",
+    ) -> None:
         self._remaining_failures = failures
         self._content = content
+        self._error_message = error_message
         self.calls = 0
 
     def invoke(self, messages: Any, config: Any = None) -> AIMessage:
@@ -38,7 +47,7 @@ class _FlakyChatModel:
         self.calls += 1
         if self._remaining_failures > 0:
             self._remaining_failures -= 1
-            raise RuntimeError("Provider returned error")
+            raise RuntimeError(self._error_message)
         return AIMessage(content=self._content)
 
 
@@ -89,6 +98,39 @@ def test_text_does_not_retry_when_max_attempts_is_one() -> None:
         _call_text(gateway)
 
     assert chat_model.calls == 1
+
+
+def test_text_failure_sanitizes_public_error_and_logs_detail(
+    caplog: LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="medic.agents.model_gateway")
+    raw_error = "Provider returned API key sk-test-123 and path /tmp/secret"
+    chat_model = _FlakyChatModel(failures=1, error_message=raw_error)
+    trace_recorder = AgentTraceRecorder()
+    gateway = AgentModelGateway(
+        chat_model=chat_model,  # type: ignore[arg-type]
+        observability=NullAgentObservability(),
+        trace_recorder=trace_recorder,
+        max_attempts=1,
+        retry_backoff_seconds=0.0,
+        default_label="model-a",
+    )
+
+    with pytest.raises(AgentExecutionError) as caught:
+        _call_text(gateway)
+
+    public_error = str(caught.value)
+    assert public_error == (
+        "professor model call during synthesis via model-a failed. "
+        "See server logs for details."
+    )
+    assert raw_error not in public_error
+    failed_event = next(
+        event for event in trace_recorder.events() if event.status == "failed"
+    )
+    assert failed_event.payload["error"] == public_error
+    assert raw_error not in str(failed_event.payload["error"])
+    assert raw_error in caplog.text
 
 
 def test_text_succeeds_on_first_attempt_without_retry() -> None:
@@ -161,3 +203,9 @@ def test_retry_records_each_failed_attempt_in_trace() -> None:
         event for event in trace_recorder.events() if event.status == "retrying"
     ]
     assert len(retry_events) == 2
+    for event in retry_events:
+        assert event.payload["error"] == (
+            "Transient model provider error; retrying. "
+            "See server logs for details."
+        )
+        assert "Provider returned error" not in str(event.payload["error"])

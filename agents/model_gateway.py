@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Mapping
 from typing import TypeVar, cast
@@ -29,6 +30,12 @@ from agents.trace import AgentTraceRecorder
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 _ResultT = TypeVar("_ResultT")
+logger = logging.getLogger("medic.agents.model_gateway")
+
+_LOG_DETAILS_MESSAGE = "See server logs for details."
+_RETRY_ERROR_MESSAGE = (
+    f"Transient model provider error; retrying. {_LOG_DETAILS_MESSAGE}"
+)
 
 
 class AgentModelGateway:
@@ -177,20 +184,47 @@ class AgentModelGateway:
                 phase=phase,
             )
         except Exception as error:
-            self._record_failure(agent_name=agent_name, phase=phase, error=error)
-            raise AgentExecutionError("Agent structured model call failed") from error
+            public_error = _describe_failure(
+                action="structured model call",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+            )
+            _log_failure(
+                action="structured model call",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+                error=error,
+            )
+            self._record_failure(
+                agent_name=agent_name,
+                phase=phase,
+                public_error=public_error,
+            )
+            raise AgentExecutionError(public_error) from error
 
         if not isinstance(response, schema):
             invalid_error = TypeError(
                 f"Structured response must be {schema.__name__}, "
                 f"got {type(response).__name__}"
             )
+            _log_failure(
+                action="structured output validation",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+                error=invalid_error,
+            )
             self._record_failure(
                 agent_name=agent_name,
                 phase=phase,
-                error=invalid_error,
+                public_error="Agent returned invalid structured output. "
+                f"{_LOG_DETAILS_MESSAGE}",
             )
-            raise AgentExecutionError("Agent returned invalid structured output")
+            raise AgentExecutionError(
+                f"Agent returned invalid structured output. {_LOG_DETAILS_MESSAGE}"
+            )
 
         self._record_success(
             agent_name=agent_name,
@@ -220,13 +254,44 @@ class AgentModelGateway:
                 phase=phase,
             )
         except Exception as error:
-            self._record_failure(agent_name=agent_name, phase=phase, error=error)
-            raise AgentExecutionError("Agent model call failed") from error
+            public_error = _describe_failure(
+                action="model call",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+            )
+            _log_failure(
+                action="model call",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+                error=error,
+            )
+            self._record_failure(
+                agent_name=agent_name,
+                phase=phase,
+                public_error=public_error,
+            )
+            raise AgentExecutionError(public_error) from error
 
         if not isinstance(response, AIMessage):
             error = TypeError("Agent model returned an unsupported message")
-            self._record_failure(agent_name=agent_name, phase=phase, error=error)
-            raise AgentExecutionError(str(error))
+            _log_failure(
+                action="model response validation",
+                agent_name=agent_name,
+                phase=phase,
+                label=self._label_for(agent_name),
+                error=error,
+            )
+            self._record_failure(
+                agent_name=agent_name,
+                phase=phase,
+                public_error="Agent model returned an unsupported message. "
+                f"{_LOG_DETAILS_MESSAGE}",
+            )
+            raise AgentExecutionError(
+                f"Agent model returned an unsupported message. {_LOG_DETAILS_MESSAGE}"
+            )
 
         self._record_success(
             agent_name=agent_name,
@@ -263,9 +328,9 @@ class AgentModelGateway:
         *,
         agent_name: str,
         phase: str,
-        error: Exception,
+        public_error: str,
     ) -> None:
-        payload: dict[str, object] = {"phase": phase, "error": str(error)}
+        payload: dict[str, object] = {"phase": phase, "error": public_error}
         self._add_model_label(payload, agent_name)
         self._trace_recorder.record(
             event_type="model_call",
@@ -295,6 +360,13 @@ class AgentModelGateway:
                 last_error = error
                 if attempt >= self._max_attempts:
                     break
+                _log_retry(
+                    agent_name=agent_name,
+                    phase=phase,
+                    attempt=attempt,
+                    error=error,
+                    label=self._label_for(agent_name),
+                )
                 self._record_retry(
                     agent_name=agent_name,
                     phase=phase,
@@ -322,7 +394,7 @@ class AgentModelGateway:
         payload: dict[str, object] = {
             "phase": phase,
             "attempt": attempt,
-            "error": str(error),
+            "error": _RETRY_ERROR_MESSAGE,
         }
         self._add_model_label(payload, agent_name)
         self._trace_recorder.record(
@@ -332,6 +404,67 @@ class AgentModelGateway:
             agent_name=agent_name,
             payload=payload,
         )
+
+
+def _describe_failure(
+    *,
+    action: str,
+    agent_name: str,
+    phase: str,
+    label: str | None,
+) -> str:
+    """Build a human-readable failure message naming where and why it failed."""
+    model_part = f" via {label}" if label else ""
+    return (
+        f"{agent_name} {action} during {phase}{model_part} failed. "
+        f"{_LOG_DETAILS_MESSAGE}"
+    )
+
+
+def _log_failure(
+    *,
+    action: str,
+    agent_name: str,
+    phase: str,
+    label: str | None,
+    error: Exception,
+) -> None:
+    logger.error(
+        "%s %s during %s%s failed with %s: %s",
+        agent_name,
+        action,
+        phase,
+        _model_label_part(label),
+        type(error).__name__,
+        error,
+        exc_info=(type(error), error, error.__traceback__),
+    )
+
+
+def _log_retry(
+    *,
+    agent_name: str,
+    phase: str,
+    attempt: int,
+    error: Exception,
+    label: str | None,
+) -> None:
+    logger.warning(
+        "%s model call attempt %s during %s%s failed with %s: %s; retrying",
+        agent_name,
+        attempt,
+        phase,
+        _model_label_part(label),
+        type(error).__name__,
+        error,
+        exc_info=(type(error), error, error.__traceback__),
+    )
+
+
+def _model_label_part(label: str | None) -> str:
+    if label is None:
+        return ""
+    return f" via {label}"
 
 
 def _message_content(message: BaseMessage) -> str:

@@ -28,6 +28,10 @@ export function AssistantView(): JSX.Element {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{
+    message: string;
+    trace: TraceEvent[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [answering, setAnswering] = useState(false);
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
@@ -101,6 +105,7 @@ export function AssistantView(): JSX.Element {
 
   const openConversation = async (id: string): Promise<void> => {
     setError("");
+    setFailure(null);
     try {
       const payload = await api<{ conversation: Conversation }>(
         `/api/chat/conversations/${id}`,
@@ -118,6 +123,7 @@ export function AssistantView(): JSX.Element {
     if (!normalized || answering) return;
     setAnswering(true);
     setError("");
+    setFailure(null);
     setLiveTrace([]);
     try {
       const payload = await api<{
@@ -155,7 +161,10 @@ export function AssistantView(): JSX.Element {
       const run = JSON.parse((event as MessageEvent).data) as ChatRun;
       if (run.conversation) setConversation(run.conversation);
       if (run.error) {
-        setError(run.error);
+        setFailure({
+          message: run.error,
+          trace: run.trace_events ?? [],
+        });
         setQuestion(submittedQuestion);
       }
       setAnswering(false);
@@ -204,6 +213,8 @@ export function AssistantView(): JSX.Element {
               setConversation(null);
               setLiveTrace([]);
               setSource(null);
+              setFailure(null);
+              setError("");
             }}
           >
             New conversation
@@ -212,6 +223,13 @@ export function AssistantView(): JSX.Element {
       </section>
       {connectionWarning ? (
         <Alert title="Reconnecting">{connectionWarning}</Alert>
+      ) : null}
+      {failure ? (
+        <ErrorState
+          title="Agent run failed"
+          message={failure.message}
+          retry={question.trim() && !answering ? () => void submit() : undefined}
+        />
       ) : null}
       {error ? (
         <ErrorState
@@ -262,6 +280,18 @@ export function AssistantView(): JSX.Element {
                   <StatusBadge status="running" />
                 </div>
                 <Trace events={liveTrace} empty="Waiting for coordinator…" />
+              </article>
+            ) : null}
+            {!answering && failure ? (
+              <article class={styles.message}>
+                <div class={styles.itemHeader}>
+                  <strong>Agent execution stopped</strong>
+                  <StatusBadge status="failed" />
+                </div>
+                <Trace
+                  events={failure.trace}
+                  empty="The run failed before any phase was recorded."
+                />
               </article>
             ) : null}
           </section>
@@ -496,6 +526,11 @@ function Trace({
               : ""}
             {event.tool_name ? ` · ${event.tool_name}` : ""}
           </span>
+          {payloadString(event.payload, "error") ? (
+            <p class={styles.traceError}>
+              {payloadString(event.payload, "error")}
+            </p>
+          ) : null}
           {Object.keys(event.payload).length ? (
             <details>
               <summary>Payload</summary>

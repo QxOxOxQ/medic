@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
-from agents.models import AgentRequest, AgentSource
+import pytest
+from pytest import LogCaptureFixture
+
+from agents.models import AgentExecutionError, AgentRequest, AgentSource
 from agents.professor import MedicalContextCollector, ProfessorSourceExpander
 from agents.structured_output import DocumentExpansionPayload
 from agents.trace import AgentTraceRecorder
@@ -27,11 +31,19 @@ def _source(source_id: str) -> AgentSource:
 
 
 class _FakeSearchPort:
-    def __init__(self, sources: Iterable[AgentSource]) -> None:
+    def __init__(
+        self,
+        sources: Iterable[AgentSource],
+        *,
+        error: Exception | None = None,
+    ) -> None:
         self._sources = list(sources)
+        self._error = error
 
     def search_sources(self, *, query: str) -> tuple[AgentSource, ...]:
         del query
+        if self._error is not None:
+            raise self._error
         return tuple(self._sources)
 
     def sources(self) -> tuple[AgentSource, ...]:
@@ -180,6 +192,34 @@ def test_source_expander_noops_without_sources() -> None:
         for event in recorder.events()
         if event.event_type == "source_expansion"
     ]
+
+
+def test_context_collector_sanitizes_retrieval_error_and_logs_detail(
+    caplog: LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="medic.agents.professor")
+    raw_error = "Qdrant http://internal.local failed with token secret-123"
+    recorder = AgentTraceRecorder()
+    collector = MedicalContextCollector(
+        search_port=_FakeSearchPort((), error=RuntimeError(raw_error)),
+        trace_recorder=recorder,
+        max_queries=2,
+    )
+
+    with pytest.raises(AgentExecutionError) as caught:
+        collector.collect(("knee MRI",))
+
+    assert str(caught.value) == (
+        "Professor document retrieval failed. See server logs for details."
+    )
+    assert raw_error not in str(caught.value)
+    failed_event = next(
+        event for event in recorder.events() if event.status == "failed"
+    )
+    assert failed_event.payload["query"] == "knee MRI"
+    assert failed_event.payload["error"] == str(caught.value)
+    assert raw_error not in str(failed_event.payload["error"])
+    assert raw_error in caplog.text
 
 
 class _FakeDocument:

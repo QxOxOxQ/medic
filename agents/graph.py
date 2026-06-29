@@ -38,6 +38,7 @@ from agents.trace import AgentTraceRecorder
 
 
 AGENT_PROMPT_VERSION = "agents-v2"
+_AGENT_FAILURE_MESSAGE = "Agent execution failed. See server logs for details."
 
 logger = logging.getLogger("medic.agents.graph")
 
@@ -129,13 +130,19 @@ class AgentGraph:
         except (AgentExecutionError, UnknownAgentError):
             raise
         except Exception as error:
+            logger.error(
+                "Agent execution failed with %s: %s",
+                type(error).__name__,
+                error,
+                exc_info=(type(error), error, error.__traceback__),
+            )
             self._trace_recorder.record(
                 event_type="error",
                 title="Agent execution failed",
                 status="failed",
-                payload={"error": str(error)},
+                payload={"error": _AGENT_FAILURE_MESSAGE},
             )
-            raise AgentExecutionError("Agent execution failed") from error
+            raise AgentExecutionError(_AGENT_FAILURE_MESSAGE) from error
 
         self._observability.complete(result)
         return result
