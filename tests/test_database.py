@@ -233,7 +233,7 @@ def test_search_results_fall_back_to_owned_hash_when_point_id_is_not_recorded(
 
     response = SimpleNamespace(
         points=[
-            _point("qdrant-only-point", "owner-hash", "nested/report.md", "owner chunk"),
+            _point(None, "owner-hash", "nested/report.md", "owner chunk"),
         ]
     )
 
@@ -244,8 +244,46 @@ def test_search_results_fall_back_to_owned_hash_when_point_id_is_not_recorded(
     )
 
     assert [result.excerpt for result in results] == ["owner chunk"]
-    assert results[0].qdrant_point_id == "qdrant-only-point"
+    assert results[0].qdrant_point_id is None
     assert results[0].document_name == "report.pdf"
+
+
+def test_search_results_reject_unowned_point_id_even_when_hash_matches(
+    tmp_path,
+) -> None:
+    factory = _database_session_factory(f"sqlite:///{tmp_path / 'strict-point.db'}")
+    with factory() as session:
+        user = UserRepository(session).create_user(username="owner", password="secret")
+        DocumentRepository(session).upsert_prepared_document(
+            owner_user_id=user.id,
+            relative_raw_path="nested/report.pdf",
+            original_filename="report.pdf",
+            parsed_markdown_path="nested/report.md",
+            content_hash="owner-hash",
+            byte_size=1,
+            processed_at=None,
+        )
+        owner_id = user.id
+        session.commit()
+
+    response = SimpleNamespace(
+        points=[
+            _point(
+                "unowned-point",
+                "owner-hash",
+                "nested/report.md",
+                "should be excluded",
+            ),
+        ]
+    )
+
+    results = search_results_from_response(
+        response,
+        owner_user_id=owner_id,
+        database_session_factory=factory,
+    )
+
+    assert results == []
 
 
 def _point(

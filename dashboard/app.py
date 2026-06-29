@@ -24,12 +24,10 @@ from backend.pipeline_use_cases import (
     StreamPipelineEventsUseCase,
 )
 from backend.factory import (
-    build_answer_question_use_case,
     build_agent_runner_factory,
     build_chat_conversation_use_case,
 )
 from backend.routes import router as backend_router
-from backend.use_cases import AnswerQuestionUseCase
 from dashboard.admin import configure_admin
 from dashboard.auth import AuthSettings, load_auth_settings
 from dashboard.dependencies import current_user as resolve_current_user
@@ -75,7 +73,6 @@ def create_app(
     document_storage: DocumentStorage | None = None,
     process_detail_service: ProcessDetailService | None = None,
     search_service: SearchService | None = None,
-    answer_question_use_case: AnswerQuestionUseCase | None = None,
     chat_conversation_use_case: ChatConversationUseCase | None = None,
     database_session_factory: sessionmaker[Session] | None = None,
     agent_observability: AgentObservability | None = None,
@@ -115,13 +112,6 @@ def create_app(
     app.state.search_service = search_service or _search_service(
         searcher_factory,
         database_session_factory=session_factory,
-    )
-    app.state.answer_question_use_case = (
-        answer_question_use_case
-        or build_answer_question_use_case(
-            database_session_factory=session_factory,
-            observability=observability,
-        )
     )
     app.state.chat_conversation_use_case = (
         chat_conversation_use_case

@@ -223,9 +223,10 @@ async def upload_document(
     for uploaded_file in files:
         file_name = uploaded_file.filename or "<unnamed>"
         try:
-            upload = document_storage(request).save_uploaded_pdf(
+            uploaded_file.file.seek(0)
+            upload = document_storage(request).save_uploaded_pdf_stream(
                 file_name=uploaded_file.filename,
-                content=await uploaded_file.read(),
+                stream=uploaded_file.file,
                 owner=user,
                 settings=document_settings(request),
             )

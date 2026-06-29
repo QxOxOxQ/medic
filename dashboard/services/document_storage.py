@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, BinaryIO, Iterable, Protocol
 from uuid import UUID
 from uuid import uuid4
 
+import pymupdf
 from sqlalchemy.orm import Session, sessionmaker
 
 from dashboard.auth import AuthenticatedUser
@@ -32,6 +34,18 @@ class DocumentPermissionError(PermissionError):
     pass
 
 
+@dataclass(frozen=True)
+class UploadPolicy:
+    max_file_bytes: int = 25 * 1024 * 1024
+    chunk_size: int = 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if self.max_file_bytes < 1:
+            raise ValueError("Upload max_file_bytes must be positive")
+        if self.chunk_size < 1:
+            raise ValueError("Upload chunk_size must be positive")
+
+
 class IndexCleanup(Protocol):
     def delete_content_hash(self, content_hash: str | None) -> QdrantCleanupResult:
         pass
@@ -43,9 +57,11 @@ class DocumentStorage:
         *,
         index_cleanup: IndexCleanup | None = None,
         database_session_factory: sessionmaker[Session] | None = None,
+        upload_policy: UploadPolicy | None = None,
     ) -> None:
         self._index_cleanup = index_cleanup or QdrantIndexService()
         self._database_session_factory = database_session_factory
+        self._upload_policy = upload_policy or UploadPolicy()
 
     def save_uploaded_pdf(
         self,
@@ -55,23 +71,51 @@ class DocumentStorage:
         owner: AuthenticatedUser | None = None,
         settings: DocumentPreparationSettings | None = None,
     ) -> dict[str, Any]:
+        return self.save_uploaded_pdf_stream(
+            file_name=file_name,
+            stream=BytesIO(content),
+            owner=owner,
+            settings=settings,
+        )
+
+    def save_uploaded_pdf_stream(
+        self,
+        *,
+        file_name: str | None,
+        stream: BinaryIO,
+        owner: AuthenticatedUser | None = None,
+        settings: DocumentPreparationSettings | None = None,
+    ) -> dict[str, Any]:
         settings = settings or get_document_preparation_settings()
         safe_name = _safe_upload_name(file_name)
-        if not content:
-            raise DocumentOperationError("Uploaded PDF is empty")
 
         settings.raw_documents_dir.mkdir(parents=True, exist_ok=True)
         session_factory = self._database_session_factory
         use_database = owner is not None and session_factory is not None
-        relative_raw_path = _relative_upload_path(safe_name) if use_database else safe_name
+        relative_raw_path = (
+            _relative_upload_path(safe_name) if use_database else safe_name
+        )
         target_path = settings.raw_documents_dir / relative_raw_path
         if target_path.exists():
             raise DocumentOperationError(f"PDF already exists: {relative_raw_path}")
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(content)
+        temp_path = _temporary_upload_path(target_path)
+        try:
+            byte_size = _stream_upload_to_file(
+                stream,
+                temp_path,
+                policy=self._upload_policy,
+            )
+            _validate_pdf(temp_path)
+            temp_path.replace(target_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            _remove_empty_parent(temp_path, stop_at=settings.raw_documents_dir)
+            raise
+
         if owner is None or session_factory is None:
-            return {"relative_raw_path": relative_raw_path, "bytes": len(content)}
+            return {"relative_raw_path": relative_raw_path, "bytes": byte_size}
 
         try:
             with session_scope(session_factory) as session:
@@ -79,7 +123,7 @@ class DocumentStorage:
                     owner_user_id=owner.id,
                     original_filename=safe_name,
                     relative_raw_path=relative_raw_path,
-                    byte_size=len(content),
+                    byte_size=byte_size,
                 )
                 document_id = str(document.id)
         except Exception:
@@ -90,7 +134,7 @@ class DocumentStorage:
         return {
             "document_id": document_id,
             "relative_raw_path": relative_raw_path,
-            "bytes": len(content),
+            "bytes": byte_size,
         }
 
     def save_uploaded_pdfs(
@@ -232,6 +276,45 @@ def _safe_upload_name(file_name: str | None) -> str:
     if Path(safe_name).suffix.lower() != ".pdf":
         raise DocumentOperationError("Only PDF files are supported")
     return safe_name
+
+
+def _stream_upload_to_file(
+    stream: BinaryIO,
+    target_path: Path,
+    *,
+    policy: UploadPolicy,
+) -> int:
+    byte_size = 0
+    with target_path.open("xb") as target:
+        while chunk := stream.read(policy.chunk_size):
+            next_size = byte_size + len(chunk)
+            if next_size > policy.max_file_bytes:
+                raise DocumentOperationError(
+                    f"Uploaded PDF exceeds {policy.max_file_bytes} bytes"
+                )
+            target.write(chunk)
+            byte_size = next_size
+    if byte_size == 0:
+        raise DocumentOperationError("Uploaded PDF is empty")
+    return byte_size
+
+
+def _validate_pdf(path: Path) -> None:
+    try:
+        document = pymupdf.open(path)  # type: ignore[no-untyped-call]
+        try:
+            if document.page_count < 1:
+                raise DocumentOperationError("Uploaded PDF has no pages")
+        finally:
+            document.close()  # type: ignore[no-untyped-call]
+    except DocumentOperationError:
+        raise
+    except Exception as error:
+        raise DocumentOperationError("Uploaded file is not a valid PDF") from error
+
+
+def _temporary_upload_path(target_path: Path) -> Path:
+    return target_path.with_name(f".{target_path.name}.{uuid4().hex}.upload")
 
 
 def _relative_upload_path(safe_name: str) -> str:

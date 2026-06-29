@@ -4,13 +4,18 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pymupdf
 import pytest
 from sqlalchemy.orm import sessionmaker
 
 from dashboard.auth import AuthenticatedUser
 from dashboard.schemas import QdrantCleanupResult
 from dashboard.services.document_catalog import DocumentCatalog
-from dashboard.services.document_storage import DocumentOperationError, DocumentStorage
+from dashboard.services.document_storage import (
+    DocumentOperationError,
+    DocumentStorage,
+    UploadPolicy,
+)
 from rag.config import DocumentPreparationSettings
 from rag.database.migrations import upgrade_database
 from rag.database.repositories import DocumentRepository, UserRepository
@@ -23,6 +28,22 @@ def _settings(tmp_path: Path) -> DocumentPreparationSettings:
         raw_documents_dir=tmp_path / "data" / "raw",
         parsed_markdown_dir=tmp_path / "data" / "parsed",
     )
+
+
+def _pdf_bytes(text: str = "Synthetic PDF") -> bytes:
+    document = pymupdf.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), text, fontsize=12)
+        return document.tobytes()
+    finally:
+        document.close()
+
+
+def _stored_files(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(path for path in directory.rglob("*") if path.is_file())
 
 
 def _write_file(path: Path, content: str | bytes = "") -> None:
@@ -221,19 +242,20 @@ def test_document_detail_can_skip_qdrant_for_lazy_artifact_tabs(tmp_path) -> Non
 def test_document_storage_upload_accepts_only_new_pdf_files(tmp_path) -> None:
     settings = _settings(tmp_path)
     storage = DocumentStorage(index_cleanup=_IndexCleanup())
+    pdf_content = _pdf_bytes("Report")
 
     result = storage.save_uploaded_pdf(
         file_name="report.pdf",
-        content=b"%PDF-1.4\n",
+        content=pdf_content,
         settings=settings,
     )
 
-    assert result == {"relative_raw_path": "report.pdf", "bytes": 9}
-    assert (settings.raw_documents_dir / "report.pdf").read_bytes() == b"%PDF-1.4\n"
+    assert result == {"relative_raw_path": "report.pdf", "bytes": len(pdf_content)}
+    assert (settings.raw_documents_dir / "report.pdf").read_bytes() == pdf_content
     with pytest.raises(DocumentOperationError, match="already exists"):
         storage.save_uploaded_pdf(
             file_name="report.pdf",
-            content=b"%PDF-1.4\n",
+            content=pdf_content,
             settings=settings,
         )
     with pytest.raises(DocumentOperationError, match="Only PDF"):
@@ -244,28 +266,58 @@ def test_document_storage_upload_accepts_only_new_pdf_files(tmp_path) -> None:
         )
 
 
-def test_document_storage_uploads_multiple_pdf_files(tmp_path) -> None:
+def test_document_storage_rejects_oversized_upload_without_persisting(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    pdf_content = _pdf_bytes("Oversized")
+    storage = DocumentStorage(
+        index_cleanup=_IndexCleanup(),
+        upload_policy=UploadPolicy(max_file_bytes=len(pdf_content) - 1, chunk_size=8),
+    )
+
+    with pytest.raises(DocumentOperationError, match="exceeds"):
+        storage.save_uploaded_pdf(
+            file_name="report.pdf",
+            content=pdf_content,
+            settings=settings,
+        )
+
+    assert _stored_files(settings.raw_documents_dir) == []
+
+
+def test_document_storage_rejects_malformed_pdf_without_persisting(tmp_path) -> None:
     settings = _settings(tmp_path)
     storage = DocumentStorage(index_cleanup=_IndexCleanup())
 
+    with pytest.raises(DocumentOperationError, match="valid PDF"):
+        storage.save_uploaded_pdf(
+            file_name="report.pdf",
+            content=b"%PDF-1.4\nnot real",
+            settings=settings,
+        )
+
+    assert _stored_files(settings.raw_documents_dir) == []
+
+
+def test_document_storage_uploads_multiple_pdf_files(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    storage = DocumentStorage(index_cleanup=_IndexCleanup())
+    report_pdf = _pdf_bytes("Report")
+    summary_pdf = _pdf_bytes("Summary")
+
     result = storage.save_uploaded_pdfs(
         [
-            ("report.pdf", b"%PDF-1.4\nreport"),
-            ("summary.pdf", b"%PDF-1.4\nsummary"),
+            ("report.pdf", report_pdf),
+            ("summary.pdf", summary_pdf),
         ],
         settings=settings,
     )
 
     assert result == [
-        {"relative_raw_path": "report.pdf", "bytes": 15},
-        {"relative_raw_path": "summary.pdf", "bytes": 16},
+        {"relative_raw_path": "report.pdf", "bytes": len(report_pdf)},
+        {"relative_raw_path": "summary.pdf", "bytes": len(summary_pdf)},
     ]
-    assert (settings.raw_documents_dir / "report.pdf").read_bytes() == (
-        b"%PDF-1.4\nreport"
-    )
-    assert (settings.raw_documents_dir / "summary.pdf").read_bytes() == (
-        b"%PDF-1.4\nsummary"
-    )
+    assert (settings.raw_documents_dir / "report.pdf").read_bytes() == report_pdf
+    assert (settings.raw_documents_dir / "summary.pdf").read_bytes() == summary_pdf
 
 
 def test_document_storage_delete_blocks_traversal_and_removes_local_artifacts(

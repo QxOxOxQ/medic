@@ -191,9 +191,6 @@ application with these workspaces:
 - `Retrieval` — direct inspection of ranked Qdrant results.
 - `Admin` — SQLAdmin for authorized administrators.
 
-The previous server-rendered dashboard remains temporarily available at
-<http://127.0.0.1:8000/legacy> as a migration fallback.
-
 API contracts are defined with Pydantic and exported through OpenAPI. Regenerate
 the checked-in TypeScript schema after changing a contract:
 

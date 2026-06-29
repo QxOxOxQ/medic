@@ -103,7 +103,7 @@ After changing prompts, run:
 
 ```bash
 uv run pytest tests/test_agents.py -q
-uv run pytest tests/test_ask_endpoint.py tests/test_chat_conversations.py tests/test_tools.py -q
+uv run pytest tests/test_answer_question_use_case.py tests/test_chat_conversations.py tests/test_tools.py -q
 ```
 
 Acceptance criteria:
@@ -125,6 +125,6 @@ Before editing prompts, inspect these source areas:
 - `agents/models.py` for answer, source, trace, and request contracts.
 - `tools/rag_search.py` and `tools/source_ledger.py` for retrieval tool behavior and source IDs.
 - `backend/routes.py` and `backend/chat_use_cases.py` for chat request handling and conversation context.
-- `dashboard/static/chat.js` for citation rendering and source display.
+- `frontend/features/assistant/AssistantView.tsx` for citation rendering and source display.
 - `rag/retrieval.py`, `rag/searcher.py`, and `rag/database/repositories.py` for search ownership and metadata filtering.
-- `tests/test_agents.py`, `tests/test_ask_endpoint.py`, `tests/test_chat_conversations.py`, and `tests/test_tools.py` for current behavioral expectations.
+- `tests/test_agents.py`, `tests/test_answer_question_use_case.py`, `tests/test_chat_conversations.py`, and `tests/test_tools.py` for current behavioral expectations.

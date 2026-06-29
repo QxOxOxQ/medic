@@ -15,11 +15,11 @@ from sqlalchemy.orm import sessionmaker
 import rag.config as settings_module
 from agents.models import AgentAnswer, AgentTraceEvent
 from backend.chat_use_cases import ChatConversationUseCase
-from backend.use_cases import AnswerQuestionUseCase
 from dashboard.app import create_app
 from dashboard.auth import AuthConfigurationError, AuthSettings, load_auth_settings
 from dashboard.documents import qdrant_index_preview_for_content_hash
 from dashboard.jobs import JobStore
+from dashboard.services.document_storage import DocumentStorage, UploadPolicy
 from rag.config import DocumentPreparationSettings
 from rag.database import DocumentRepository, UserRepository
 from rag.database.chat_store import SqlAlchemyChatConversationStore
@@ -40,6 +40,7 @@ class _SearchServiceStub:
 
 class _AgentRunnerStub:
     def answer(self, request: object) -> AgentAnswer:
+        del request
         return AgentAnswer(
             answer="Stub answer.",
             agents=(),
@@ -55,18 +56,32 @@ def _settings(tmp_path: Path) -> DocumentPreparationSettings:
     )
 
 
+def _pdf_bytes(text: str = "Synthetic PDF") -> bytes:
+    document = pymupdf.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), text, fontsize=12)
+        return document.tobytes()
+    finally:
+        document.close()
+
+
+def _stored_files(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(path for path in directory.rglob("*") if path.is_file())
+
+
 def _client(
     tmp_path: Path,
     monkeypatch,
     *,
     job_store: JobStore | None = None,
+    upload_policy: UploadPolicy | None = None,
 ) -> tuple[TestClient, DocumentPreparationSettings]:
     _isolate_external_env(tmp_path, monkeypatch)
     document_settings = _settings(tmp_path)
     session_factory = _database_session_factory(tmp_path)
-    answer_use_case = AnswerQuestionUseCase(
-        agent_runner_factory=lambda **_: _AgentRunnerStub(),
-    )
     chat_use_case = ChatConversationUseCase(
         agent_runner_factory=lambda **_: _AgentRunnerStub(),
         conversation_store=SqlAlchemyChatConversationStore(session_factory),
@@ -81,7 +96,10 @@ def _client(
         document_settings=document_settings,
         job_store=job_store,
         database_session_factory=session_factory,
-        answer_question_use_case=answer_use_case,
+        document_storage=DocumentStorage(
+            database_session_factory=session_factory,
+            upload_policy=upload_policy,
+        ),
         chat_conversation_use_case=chat_use_case,
         search_service=_SearchServiceStub(),
     )
@@ -634,7 +652,7 @@ def test_dashboard_has_no_language_preferences_endpoint(tmp_path, monkeypatch) -
     assert "preferred" + "_language" not in rendered.text
 
 
-def test_legacy_dashboard_remains_available_during_ui_migration(
+def test_legacy_dashboard_route_is_removed(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -643,77 +661,20 @@ def test_legacy_dashboard_remains_available_during_ui_migration(
 
     response = client.get("/legacy")
 
-    assert response.status_code == 200
-    assert "Process details" in response.text
-    assert "Source PDFs" in response.text
-    assert "Documents in database" in response.text
-    assert '<th data-i18n="documents.status">Status</th>' in response.text
-    assert '<th data-i18n="common.index">Index</th>' in response.text
-    assert '<th data-i18n="common.actions">Actions</th>' in response.text
-    assert '<th data-i18n="documents.select">Select</th>' in response.text
-    assert 'id="select-all-documents"' in response.text
-    assert "Mark all" in response.text
-    assert 'id="delete-selected"' in response.text
-    assert (
-        'id="pdf-file" name="file" type="file" accept="application/pdf,.pdf" '
-        "multiple required"
-    ) in response.text
-    assert 'data-process-tab="markdown"' in response.text
-    assert 'data-process-tab="chunks"' in response.text
-    assert 'data-process-tab="index"' in response.text
-    assert 'id="process-error"' in response.text
-    assert 'data-step="embed"' in response.text
-    assert "Medical agent" in response.text
-    assert "Test RAG" not in response.text
-    assert 'id="chat-form"' in response.text
-    assert 'id="chat-question"' in response.text
-    assert 'id="chat-state"' in response.text
-    assert 'id="chat-history"' in response.text
-    assert 'id="chat-sources"' in response.text
-    assert "Pipeline history" in response.text
-    assert "/static/i18n.js" in response.text
-    assert "/static/chat.js" in response.text
-    assert "/static/search.js" not in response.text
-    assert "/static/job-events.js" in response.text
-    assert "/static/job-history.js" in response.text
-
-
-def test_dashboard_refresh_dashboard_uses_global_app_reference() -> None:
-    script = (
-        Path(__file__).parents[1] / "dashboard" / "static" / "dashboard.js"
-    ).read_text(encoding="utf-8")
-    match = re.search(
-        r"async refreshDashboard\(\) \{\n(?P<body>.*?)\n  \},",
-        script,
-        re.DOTALL,
-    )
-
-    assert match is not None
-    body = match.group("body")
-    assert "const app = window.MedicDashboard;" in body
-    assert "this.documents" not in body
-    assert "this.jobHistory" not in body
-
-
-def test_dashboard_has_no_language_preferences_script() -> None:
-    script = (
-        Path(__file__).parents[1] / "dashboard" / "static" / "dashboard.js"
-    ).read_text(encoding="utf-8")
-
-    assert "save" + "Language" not in script
-    assert "/api/user" + "/preferences" not in script
-    assert "language" + "Select" not in script
+    assert response.status_code == 404
+    assert "/legacy" not in client.app.openapi()["paths"]
 
 
 def test_dashboard_uploads_pdf_and_rejects_non_pdf(tmp_path, monkeypatch) -> None:
     client, settings = _client(tmp_path, monkeypatch)
     _login(client)
     csrf_token = _csrf_token(client)
+    pdf_content = _pdf_bytes("LDL report")
 
     uploaded = client.post(
         "/api/documents/upload",
         data={"csrf_token": csrf_token},
-        files={"file": ("report.pdf", b"%PDF-1.4\n", "application/pdf")},
+        files={"file": ("report.pdf", pdf_content, "application/pdf")},
     )
     rejected = client.post(
         "/api/documents/upload",
@@ -725,12 +686,44 @@ def test_dashboard_uploads_pdf_and_rejects_non_pdf(tmp_path, monkeypatch) -> Non
     assert uploaded.status_code == 200
     upload_path = uploaded.json()["uploads"][0]["relative_raw_path"]
     assert upload_path.endswith("/report.pdf")
-    assert (settings.raw_documents_dir / upload_path).read_bytes() == b"%PDF-1.4\n"
+    assert (settings.raw_documents_dir / upload_path).read_bytes() == pdf_content
     assert rejected.status_code == 400
     assert documents.json()["documents"][0]["relative_raw_path"] == upload_path
 
 
-def test_dashboard_uploads_multiple_pdfs(tmp_path, monkeypatch) -> None:
+def test_dashboard_rejects_oversized_pdf_without_persisting(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pdf_content = _pdf_bytes("Oversized report")
+    client, settings = _client(
+        tmp_path,
+        monkeypatch,
+        upload_policy=UploadPolicy(
+            max_file_bytes=len(pdf_content) - 1,
+            chunk_size=8,
+        ),
+    )
+    _login(client)
+    csrf_token = _csrf_token(client)
+
+    response = client.post(
+        "/api/documents/upload",
+        data={"csrf_token": csrf_token},
+        files={"file": ("report.pdf", pdf_content, "application/pdf")},
+    )
+    documents = client.get("/api/documents")
+
+    assert response.status_code == 400
+    assert "exceeds" in response.json()["detail"]
+    assert documents.json()["documents"] == []
+    assert _stored_files(settings.raw_documents_dir) == []
+
+
+def test_dashboard_rejects_malformed_pdf_without_persisting(
+    tmp_path,
+    monkeypatch,
+) -> None:
     client, settings = _client(tmp_path, monkeypatch)
     _login(client)
     csrf_token = _csrf_token(client)
@@ -738,9 +731,29 @@ def test_dashboard_uploads_multiple_pdfs(tmp_path, monkeypatch) -> None:
     response = client.post(
         "/api/documents/upload",
         data={"csrf_token": csrf_token},
+        files={"file": ("report.pdf", b"%PDF-1.4\nnot real", "application/pdf")},
+    )
+    documents = client.get("/api/documents")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file is not a valid PDF"
+    assert documents.json()["documents"] == []
+    assert _stored_files(settings.raw_documents_dir) == []
+
+
+def test_dashboard_uploads_multiple_pdfs(tmp_path, monkeypatch) -> None:
+    client, settings = _client(tmp_path, monkeypatch)
+    _login(client)
+    csrf_token = _csrf_token(client)
+    report_pdf = _pdf_bytes("Report")
+    summary_pdf = _pdf_bytes("Summary")
+
+    response = client.post(
+        "/api/documents/upload",
+        data={"csrf_token": csrf_token},
         files=[
-            ("file", ("report.pdf", b"%PDF-1.4\nreport", "application/pdf")),
-            ("file", ("summary.pdf", b"%PDF-1.4\nsummary", "application/pdf")),
+            ("file", ("report.pdf", report_pdf, "application/pdf")),
+            ("file", ("summary.pdf", summary_pdf, "application/pdf")),
         ],
     )
     documents = client.get("/api/documents")
@@ -754,12 +767,8 @@ def test_dashboard_uploads_multiple_pdfs(tmp_path, monkeypatch) -> None:
     }
     report_path = uploads_by_name["report.pdf"]["relative_raw_path"]
     summary_path = uploads_by_name["summary.pdf"]["relative_raw_path"]
-    assert (settings.raw_documents_dir / report_path).read_bytes() == (
-        b"%PDF-1.4\nreport"
-    )
-    assert (settings.raw_documents_dir / summary_path).read_bytes() == (
-        b"%PDF-1.4\nsummary"
-    )
+    assert (settings.raw_documents_dir / report_path).read_bytes() == report_pdf
+    assert (settings.raw_documents_dir / summary_path).read_bytes() == summary_pdf
     assert {
         document["relative_raw_path"] for document in documents.json()["documents"]
     } == {report_path, summary_path}
@@ -772,12 +781,13 @@ def test_dashboard_reports_each_file_in_a_partial_upload(
     client, _ = _client(tmp_path, monkeypatch)
     _login(client)
     csrf_token = _csrf_token(client)
+    report_pdf = _pdf_bytes("Report")
 
     response = client.post(
         "/api/documents/upload",
         data={"csrf_token": csrf_token},
         files=[
-            ("file", ("report.pdf", b"%PDF-1.4\nreport", "application/pdf")),
+            ("file", ("report.pdf", report_pdf, "application/pdf")),
             ("file", ("notes.txt", b"notes", "text/plain")),
         ],
     )

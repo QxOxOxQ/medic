@@ -6,7 +6,6 @@ from uuid import UUID
 from fastapi import Request
 
 from backend.chat_use_cases import ChatConversationUseCase
-from backend.use_cases import AnswerQuestionUseCase
 
 
 class AuthenticatedUser(Protocol):
@@ -16,10 +15,6 @@ class AuthenticatedUser(Protocol):
 class CurrentUserResolver(Protocol):
     def __call__(self, request: Request) -> AuthenticatedUser:
         ...
-
-
-def answer_question_use_case(request: Request) -> AnswerQuestionUseCase:
-    return cast(AnswerQuestionUseCase, request.app.state.answer_question_use_case)
 
 
 def chat_conversation_use_case(request: Request) -> ChatConversationUseCase:

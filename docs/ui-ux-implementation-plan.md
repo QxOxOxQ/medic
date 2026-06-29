@@ -1,8 +1,7 @@
 # Czteroetapowy plan wdrożenia nowego UI/UX Medic RAG
 
-> Status na 24 czerwca 2026: wszystkie cztery etapy zostały zaimplementowane.
-> Fallback `/legacy` pozostaje tymczasowo dostępny do akceptacji kompletnego
-> scenariusza E2E z dokumentami demonstracyjnymi i zewnętrznym Qdrant/OpenRouter.
+> Status na 29 czerwca 2026: wszystkie cztery etapy zostały zaimplementowane,
+> a fallback `/legacy` został usunięty po przejściu aplikacji na Preact UI.
 
 ## Cel produktu
 
@@ -71,7 +70,7 @@ flowchart LR
   `focus-visible`, WCAG AA i `prefers-reduced-motion`.
 - `AssetManifest` i build Vite do `dashboard/static/dist`.
 - Node.js 24 w obrazie buildowym i osobny watcher frontendu w Compose.
-- Zachowanie starego dashboardu pod `/legacy` do czasu pełnej parytetowości.
+- Usunięcie starego dashboardu po osiągnięciu parytetowości w Preact UI.
 
 ### Widok Overview
 
@@ -128,7 +127,7 @@ flowchart LR
 - Lista dokumentów nie pobiera całego manifestu i skaluje się do co najmniej
   1000 rekordów.
 - Widok 390 px nie ma poziomego overflow.
-- Upload → inspect → retrieval działa bez `/legacy`.
+- Upload → inspect → retrieval działa w Preact UI.
 
 ## Etap 3 — Trwały i transparentny Pipeline
 
@@ -220,7 +219,7 @@ flowchart LR
 ## Strategia wdrożenia i rollback
 
 - Każdy etap zachowuje istniejące API lub dodaje nowe endpointy.
-- `/legacy` jest fallbackiem podczas stabilizacji.
+- Rollback frontendu wymaga przywrócenia poprzedniej wersji obrazu runtime.
 - Migracja bazy jest addytywna; downgrade usuwa wyłącznie nowe tabele i
   przywraca poprzedni constraint statusu chat run.
 - Assety są atomowo dostarczane z obrazem runtime przez manifest Vite.
@@ -246,5 +245,4 @@ flowchart LR
   i 390 px. Zweryfikowano brak krytycznych/poważnych naruszeń axe, brak
   poziomego overflow oraz dostępność głównej nawigacji z klawiatury.
 - Pełny scenariusz z uploadem trzech PDF, live pipeline, live agentem i
-  restartem wymaga skonfigurowanych usług Qdrant/OpenRouter. Jego akceptacja
-  pozostaje warunkiem usunięcia `/legacy`.
+  restartem wymaga skonfigurowanych usług Qdrant/OpenRouter.

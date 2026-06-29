@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from uuid import UUID
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -10,100 +11,16 @@ from agents.models import AgentAnswer, AgentRequest, AgentSource, AgentTraceEven
 from backend.chat_use_cases import ChatConversationUseCase
 from dashboard.app import create_app
 from dashboard.auth import AuthSettings
-from rag.database.migrations import upgrade_database
 from rag.database.chat_store import SqlAlchemyChatConversationStore
+from rag.database.migrations import upgrade_database
 from rag.database.repositories import UserRepository
 from rag.database.session import create_database_engine
 
 
-class RecordingAgentRunner:
-    def __init__(self) -> None:
-        self.requests: list[AgentRequest] = []
-
-    def answer(self, request: AgentRequest) -> AgentAnswer:
-        self.requests.append(request)
-        return AgentAnswer(
-            answer="Source-grounded answer [S1].",
-            agents=("cardiometabolic_internist",),
-            sources=(
-                AgentSource(
-                    id="S1",
-                    source="parsed/report.md",
-                    content_hash="hash",
-                    document_name="report.pdf",
-                    score=0.91,
-                    excerpt="LDL cholesterol is elevated.",
-                    qdrant_point_id="point-1",
-                    relative_raw_path="raw/report.pdf",
-                    chunk_index=1,
-                    char_start=0,
-                    char_end=32,
-                    retrieval_query="LDL trend",
-                ),
-            ),
-            insufficient_context=False,
-            trace_events=(
-                AgentTraceEvent(
-                    sequence=1,
-                    event_type="coordinator",
-                    title="Coordinator selected specialists",
-                    status="succeeded",
-                    agent_name="coordinator",
-                    payload={"selected_agents": ["cardiometabolic_internist"]},
-                ),
-            ),
-        )
-
-
-class TwoSourceAgentRunner:
-    """Returns an answer that cites only one of its two retrieved sources."""
-
+class UnusedAgentRunner:
     def answer(self, request: AgentRequest) -> AgentAnswer:
         del request
-        return AgentAnswer(
-            answer="Grounded on [S1] only.",
-            agents=(),
-            sources=(
-                AgentSource(
-                    id="S1",
-                    source="a.md",
-                    content_hash="hash-a",
-                    document_name="A.pdf",
-                    score=0.92,
-                    excerpt="Cited record.",
-                ),
-                AgentSource(
-                    id="S2",
-                    source="b.md",
-                    content_hash="hash-b",
-                    document_name="B.pdf",
-                    score=0.40,
-                    excerpt="Checked but unused record.",
-                ),
-            ),
-            insufficient_context=False,
-            trace_events=(),
-        )
-
-
-class RecordingAgentRunnerFactory:
-    def __init__(self, runner: RecordingAgentRunner) -> None:
-        self._runner = runner
-        self.calls: list[dict[str, object]] = []
-
-    def __call__(
-        self,
-        *,
-        owner_user_id: UUID,
-        retrieval_limit: int,
-    ) -> RecordingAgentRunner:
-        self.calls.append(
-            {
-                "owner_user_id": owner_user_id,
-                "retrieval_limit": retrieval_limit,
-            }
-        )
-        return self._runner
+        raise AssertionError("Read-only conversation tests must not run the agent")
 
 
 def _database_session_factory(tmp_path: Path) -> sessionmaker:
@@ -119,15 +36,12 @@ def _database_session_factory(tmp_path: Path) -> sessionmaker:
     return factory
 
 
-def _client(
-    tmp_path: Path,
-    *,
-    runner: RecordingAgentRunner,
-) -> TestClient:
+def _client(tmp_path: Path) -> TestClient:
     session_factory = _database_session_factory(tmp_path)
+    store = SqlAlchemyChatConversationStore(session_factory)
     use_case = ChatConversationUseCase(
-        agent_runner_factory=RecordingAgentRunnerFactory(runner),
-        conversation_store=SqlAlchemyChatConversationStore(session_factory),
+        agent_runner_factory=lambda **_: UnusedAgentRunner(),
+        conversation_store=store,
     )
     app = create_app(
         auth_settings=AuthSettings(
@@ -151,19 +65,47 @@ def _login(client: TestClient, username: str = "admin") -> None:
     assert response.status_code == 303
 
 
-def test_chat_conversation_can_be_created_loaded_and_continued(tmp_path: Path) -> None:
-    runner = RecordingAgentRunner()
-    client = _client(tmp_path, runner=runner)
-    _login(client)
+def _owner_id(client: TestClient, username: str = "admin") -> UUID:
+    with client.app.state.database_session_factory() as session:
+        user = UserRepository(session).get_by_username(username)
+        assert user is not None
+        return user.id
 
-    created = client.post(
-        "/api/chat/conversations",
-        json={"question": "Is LDL high?", "limit": 3},
+
+def _seed_completed_conversation(
+    client: TestClient,
+    *,
+    username: str = "admin",
+    question: str = "Is LDL high?",
+    answer: AgentAnswer | None = None,
+) -> str:
+    owner_user_id = _owner_id(client, username=username)
+    store = SqlAlchemyChatConversationStore(client.app.state.database_session_factory)
+    started = store.start_conversation(owner_user_id=owner_user_id, question=question)
+    detail = store.complete_run(
+        owner_user_id=owner_user_id,
+        conversation_id=started.conversation_id,
+        run_id=started.run_id,
+        answer=answer or _single_source_answer(),
     )
+    assert detail is not None
+    return str(detail.id)
 
-    assert created.status_code == 200
-    conversation = created.json()["conversation"]
-    conversation_id = conversation["id"]
+
+def test_chat_conversation_read_api_lists_and_loads_conversation(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    _login(client)
+    conversation_id = _seed_completed_conversation(client)
+
+    listed = client.get("/api/chat/conversations")
+    loaded = client.get(f"/api/chat/conversations/{conversation_id}")
+
+    assert listed.status_code == 200
+    assert listed.json()["conversations"][0]["id"] == conversation_id
+    assert loaded.status_code == 200
+    conversation = loaded.json()["conversation"]
     assert conversation["title"] == "Is LDL high?"
     assert [message["role"] for message in conversation["messages"]] == [
         "user",
@@ -174,53 +116,33 @@ def test_chat_conversation_can_be_created_loaded_and_continued(tmp_path: Path) -
     assert assistant["sources"][0]["qdrant_point_id"] == "point-1"
     assert assistant["trace_events"][0]["event_type"] == "coordinator"
 
-    listed = client.get("/api/chat/conversations")
-    assert listed.status_code == 200
-    assert listed.json()["conversations"][0]["id"] == conversation_id
+
+def test_chat_conversation_read_api_marks_only_cited_sources_as_used(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    _login(client)
+    conversation_id = _seed_completed_conversation(
+        client,
+        question="Compare A and B",
+        answer=_two_source_answer(),
+    )
 
     loaded = client.get(f"/api/chat/conversations/{conversation_id}")
+
     assert loaded.status_code == 200
-    assert len(loaded.json()["conversation"]["messages"]) == 2
-
-    continued = client.post(
-        f"/api/chat/conversations/{conversation_id}/messages",
-        json={"question": "What about glucose?", "limit": 4},
-    )
-
-    assert continued.status_code == 200
-    assert len(continued.json()["conversation"]["messages"]) == 4
-    assert runner.requests[0].user_id is not None
-    assert runner.requests[0].session_id == UUID(conversation_id)
-    assert runner.requests[0].execution_id != runner.requests[1].execution_id
-    assert runner.requests[1].conversation_messages[0].role == "user"
-    assert runner.requests[1].conversation_messages[1].role == "assistant"
-
-
-def test_chat_conversation_marks_only_cited_sources_as_used(tmp_path: Path) -> None:
-    client = _client(tmp_path, runner=TwoSourceAgentRunner())  # type: ignore[arg-type]
-    _login(client)
-
-    created = client.post(
-        "/api/chat/conversations",
-        json={"question": "Compare A and B"},
-    )
-
-    assert created.status_code == 200
-    assistant = created.json()["conversation"]["messages"][1]
+    assistant = loaded.json()["conversation"]["messages"][1]
     by_id = {source["source_id"]: source for source in assistant["sources"]}
     assert by_id["S1"]["used"] is True
     assert by_id["S2"]["used"] is False
 
 
-def test_chat_conversation_is_scoped_to_logged_in_user(tmp_path: Path) -> None:
-    runner = RecordingAgentRunner()
-    client = _client(tmp_path, runner=runner)
+def test_chat_conversation_read_api_is_scoped_to_logged_in_user(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
     _login(client, "admin")
-    created = client.post(
-        "/api/chat/conversations",
-        json={"question": "Is LDL high?"},
-    )
-    conversation_id = created.json()["conversation"]["id"]
+    conversation_id = _seed_completed_conversation(client, username="admin")
 
     other_client = TestClient(client.app)
     _login(other_client, "other")
@@ -228,3 +150,88 @@ def test_chat_conversation_is_scoped_to_logged_in_user(tmp_path: Path) -> None:
     response = other_client.get(f"/api/chat/conversations/{conversation_id}")
 
     assert response.status_code == 404
+
+
+def test_legacy_chat_execution_endpoints_are_removed(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    _login(client)
+    conversation_id = uuid4()
+
+    ask = client.post("/api/ask", json={"question": "Is LDL high?"})
+    create = client.post(
+        "/api/chat/conversations",
+        json={"question": "Is LDL high?"},
+    )
+    append = client.post(
+        f"/api/chat/conversations/{conversation_id}/messages",
+        json={"question": "What about glucose?"},
+    )
+
+    assert ask.status_code == 404
+    assert create.status_code == 405
+    assert append.status_code == 404
+    paths = client.app.openapi()["paths"]
+    assert "/api/ask" not in paths
+    assert "post" not in paths["/api/chat/conversations"]
+    assert "/api/chat/conversations/{conversation_id}/messages" not in paths
+
+
+def _single_source_answer() -> AgentAnswer:
+    return AgentAnswer(
+        answer="Source-grounded answer [S1].",
+        agents=("cardiometabolic_internist",),
+        sources=(
+            AgentSource(
+                id="S1",
+                source="parsed/report.md",
+                content_hash="hash",
+                document_name="report.pdf",
+                score=0.91,
+                excerpt="LDL cholesterol is elevated.",
+                qdrant_point_id="point-1",
+                relative_raw_path="raw/report.pdf",
+                chunk_index=1,
+                char_start=0,
+                char_end=32,
+                retrieval_query="LDL trend",
+            ),
+        ),
+        insufficient_context=False,
+        trace_events=(
+            AgentTraceEvent(
+                sequence=1,
+                event_type="coordinator",
+                title="Coordinator selected specialists",
+                status="succeeded",
+                agent_name="coordinator",
+                payload={"selected_agents": ["cardiometabolic_internist"]},
+            ),
+        ),
+    )
+
+
+def _two_source_answer() -> AgentAnswer:
+    return AgentAnswer(
+        answer="Grounded on [S1] only.",
+        agents=(),
+        sources=(
+            AgentSource(
+                id="S1",
+                source="a.md",
+                content_hash="hash-a",
+                document_name="A.pdf",
+                score=0.92,
+                excerpt="Cited record.",
+            ),
+            AgentSource(
+                id="S2",
+                source="b.md",
+                content_hash="hash-b",
+                document_name="B.pdf",
+                score=0.40,
+                excerpt="Checked but unused record.",
+            ),
+        ),
+        insufficient_context=False,
+        trace_events=(),
+    )

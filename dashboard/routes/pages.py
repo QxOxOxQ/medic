@@ -90,25 +90,6 @@ def application_route(request: Request) -> Response:
     return _application_page(request)
 
 
-@router.get("/legacy", response_class=HTMLResponse)
-def legacy_dashboard(request: Request) -> Response:
-    session = read_session(request, auth_settings(request))
-    if session is None:
-        return redirect("/login")
-    user = current_user(request)
-
-    return template_response(
-        templates(request),
-        request,
-        "index.html",
-        {
-            "username": user.username,
-            "is_admin": user.is_admin,
-            "csrf_token": session.csrf_token,
-        },
-    )
-
-
 def _application_page(request: Request) -> Response:
     session = read_session(request, auth_settings(request))
     if session is None:

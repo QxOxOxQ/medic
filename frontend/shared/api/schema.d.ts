@@ -21,23 +21,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ask": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Ask */
-        post: operations["ask_api_ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/conversations": {
         parameters: {
             query?: never;
@@ -48,8 +31,7 @@ export interface paths {
         /** List Chat Conversations */
         get: operations["list_chat_conversations_api_chat_conversations_get"];
         put?: never;
-        /** Create Chat Conversation */
-        post: operations["create_chat_conversation_api_chat_conversations_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -67,23 +49,6 @@ export interface paths {
         get: operations["load_chat_conversation_api_chat_conversations__conversation_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat/conversations/{conversation_id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Continue Chat Conversation */
-        post: operations["continue_chat_conversation_api_chat_conversations__conversation_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -526,23 +491,6 @@ export interface paths {
         };
         /** Application Route */
         get: operations["application_route_documents_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/legacy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Legacy Dashboard */
-        get: operations["legacy_dashboard_legacy_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1334,26 +1282,6 @@ export interface operations {
             };
         };
     };
-    ask_api_ask_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     list_chat_conversations_api_chat_conversations_get: {
         parameters: {
             query?: never;
@@ -1374,58 +1302,7 @@ export interface operations {
             };
         };
     };
-    create_chat_conversation_api_chat_conversations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     load_chat_conversation_api_chat_conversations__conversation_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    continue_chat_conversation_api_chat_conversations__conversation_id__messages_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2251,26 +2128,6 @@ export interface operations {
         };
     };
     application_route_documents_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": string;
-                };
-            };
-        };
-    };
-    legacy_dashboard_legacy_get: {
         parameters: {
             query?: never;
             header?: never;

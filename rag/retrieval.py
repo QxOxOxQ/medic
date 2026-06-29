@@ -175,10 +175,8 @@ def _belongs_to_database(
     source: str | None,
     ownership: SearchOwnership,
 ) -> bool:
-    if qdrant_point_id and qdrant_point_id in ownership.qdrant_point_ids:
-        return True
     if qdrant_point_id:
-        return content_hash in ownership.content_hashes or source in ownership.sources
+        return qdrant_point_id in ownership.qdrant_point_ids
     source_name = Path(source).name if source else None
     return (
         content_hash in ownership.content_hashes
@@ -199,8 +197,8 @@ def _document_metadata(
     source: str | None,
     ownership: SearchOwnership,
 ) -> SearchDocumentMetadata | None:
-    if qdrant_point_id and qdrant_point_id in ownership.metadata_by_point_id:
-        return ownership.metadata_by_point_id[qdrant_point_id]
+    if qdrant_point_id:
+        return ownership.metadata_by_point_id.get(qdrant_point_id)
     if content_hash and content_hash in ownership.metadata_by_hash:
         return ownership.metadata_by_hash[content_hash]
     if source and source in ownership.metadata_by_source:

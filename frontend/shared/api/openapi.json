@@ -1953,22 +1953,6 @@
         "summary": "Index"
       }
     },
-    "/api/ask": {
-      "post": {
-        "operationId": "ask_api_ask_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Ask"
-      }
-    },
     "/api/chat/conversations": {
       "get": {
         "operationId": "list_chat_conversations_api_chat_conversations_get",
@@ -1983,20 +1967,6 @@
           }
         },
         "summary": "List Chat Conversations"
-      },
-      "post": {
-        "operationId": "create_chat_conversation_api_chat_conversations_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Create Chat Conversation"
       }
     },
     "/api/chat/conversations/{conversation_id}": {
@@ -2035,44 +2005,6 @@
           }
         },
         "summary": "Load Chat Conversation"
-      }
-    },
-    "/api/chat/conversations/{conversation_id}/messages": {
-      "post": {
-        "operationId": "continue_chat_conversation_api_chat_conversations__conversation_id__messages_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Continue Chat Conversation"
       }
     },
     "/api/chat/runs": {
@@ -3103,24 +3035,6 @@
           }
         },
         "summary": "Application Route"
-      }
-    },
-    "/legacy": {
-      "get": {
-        "operationId": "legacy_dashboard_legacy_get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Legacy Dashboard"
       }
     },
     "/login": {
