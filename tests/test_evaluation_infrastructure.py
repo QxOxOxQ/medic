@@ -337,7 +337,7 @@ def test_ragas_openai_client_records_generation_model_and_usage() -> None:
     ]
 
 
-def test_ragas_metric_retries_once_and_reports_exhausted_metric() -> None:
+def test_ragas_metric_retries_once_then_records_failing_score() -> None:
     class FlakyMetric:
         def __init__(self, failures: int) -> None:
             self.failures = failures
@@ -366,7 +366,30 @@ def test_ragas_metric_retries_once_and_reports_exhausted_metric() -> None:
     evaluator._metrics = (
         (MetricName.ANSWER_CORRECTNESS, exhausted, lambda _: {}),
     )
-    with pytest.raises(MetricEvaluationError, match="answer_correctness.*case"):
+
+    exhausted_results = evaluator.evaluate(sample)
+
+    assert exhausted.calls == 2
+    assert exhausted_results[0].metric is MetricName.ANSWER_CORRECTNESS
+    assert exhausted_results[0].score == Score(0.0)
+    assert exhausted_results[0].raw_result_json is not None
+    assert "RuntimeError" in exhausted_results[0].raw_result_json
+    assert "metric could not be scored" in exhausted_results[0].raw_result_json
+
+
+def test_ragas_metric_propagates_misconfiguration_instead_of_scoring_zero() -> None:
+    class BrokenMetric:
+        def score(self, **kwargs: object) -> object:
+            del kwargs
+            raise AttributeError("ragas changed its API")
+
+    sample = _case_result("case").answer
+    evaluator = object.__new__(ragas_adapter.RagasMetricEvaluator)
+    evaluator._metrics = (
+        (MetricName.FAITHFULNESS, BrokenMetric(), lambda _: {}),
+    )
+
+    with pytest.raises(MetricEvaluationError, match="faithfulness.*case"):
         evaluator.evaluate(sample)
 
 

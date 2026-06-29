@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
+from agents.contracts import ResearchPlan
 from agents.graph import AGENT_PROMPT_VERSION, AgentGraph
 from agents.models import (
     AgentAnswer,
@@ -21,6 +22,7 @@ from agents.models import (
     UnknownAgentError,
 )
 from agents.observability import AgentObservability
+from agents.professor import ProfessorResearchPlanner
 from agents.profiles import AgentRegistry, load_profile_set, load_profiles
 from agents.structured_output import (
     ConsultationReportPayload,
@@ -1164,3 +1166,62 @@ def test_orchestration_components_depend_on_ports_not_langchain() -> None:
     assert "langchain" not in application_code
     assert "SourceLedger" not in application_code
     assert "BaseTool" not in application_code
+
+
+class _ResearchPlanOnlyGateway:
+    def __init__(self, plan: ResearchPlan) -> None:
+        self._plan = plan
+
+    def research_plan(self, **_: object) -> ResearchPlan:
+        return self._plan
+
+
+def _planner(plan: ResearchPlan) -> ProfessorResearchPlanner:
+    return ProfessorResearchPlanner(
+        model_gateway=_ResearchPlanOnlyGateway(plan),  # type: ignore[arg-type]
+        professor_prompt="Professor",
+        max_initial_queries=4,
+    )
+
+
+def test_research_planner_grounds_nongrounded_plan_that_carries_queries() -> None:
+    planner = _planner(
+        ResearchPlan(
+            mode="general_information",
+            response_language="English",
+            queries=("effusion flare",),
+        )
+    )
+
+    plan = planner.plan(AgentRequest(question="What is an effusion flare?"))
+
+    assert plan.mode == "record_grounded"
+    assert plan.queries == ("effusion flare",)
+
+
+def test_research_planner_keeps_nongrounded_plan_without_queries() -> None:
+    planner = _planner(
+        ResearchPlan(mode="clarify", response_language="English", queries=())
+    )
+
+    plan = planner.plan(AgentRequest(question="hello"))
+
+    assert plan.mode == "clarify"
+    assert plan.queries == ()
+
+
+def test_research_planner_grounds_clarify_turn_that_carries_queries() -> None:
+    planner = _planner(
+        ResearchPlan(
+            mode="clarify",
+            response_language="English",
+            queries=("what should not be inferred from the study",),
+        )
+    )
+
+    plan = planner.plan(
+        AgentRequest(question="What should not be inferred from the study?")
+    )
+
+    assert plan.mode == "record_grounded"
+    assert plan.queries == ("what should not be inferred from the study",)

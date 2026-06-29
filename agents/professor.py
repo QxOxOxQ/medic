@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import replace
 
 from agents.citations import cited_source_ids
 from agents.contracts import (
@@ -58,6 +59,7 @@ class ProfessorResearchPlanner:
                 agent_name=PROFESSOR_AGENT_NAME,
                 phase="research_planning",
             )
+            plan = self._ground_when_queries_present(plan)
             try:
                 self._validate(plan)
             except CoordinationValidationError as error:
@@ -109,6 +111,29 @@ class ProfessorResearchPlanner:
             f"\n\nCurrent question:\n{request.question}"
             f"{correction_block}"
         )
+
+    @staticmethod
+    def _ground_when_queries_present(plan: ResearchPlan) -> ResearchPlan:
+        """Trust retrieval intent over an uncertain mode label.
+
+        A records assistant must search before answering. When the planner
+        supplies retrieval queries but labels the turn ``general_information``
+        or ``clarify``, honoring that label would skip retrieval entirely and
+        answer (or ask) without the records. The queries are the stronger
+        signal of intent, so promote the turn to ``record_grounded`` and keep
+        them rather than discarding them on the validation retry.
+
+        ``clarify`` is included deliberately: a genuine clarify turn (a
+        greeting or unintelligible message) carries no searchable subject and
+        so yields no queries, leaving it untouched. Queries on a ``clarify``
+        turn mean the model found a subject after all and mislabeled the mode;
+        promoting then searches, and a spurious query merely returns nothing
+        and degrades to a direct answer — far cheaper than silently skipping
+        retrieval on a real medical question.
+        """
+        if plan.mode != "record_grounded" and plan.queries:
+            return replace(plan, mode="record_grounded")
+        return plan
 
     @staticmethod
     def _validate(plan: ResearchPlan) -> None:

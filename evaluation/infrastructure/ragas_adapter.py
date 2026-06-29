@@ -146,12 +146,53 @@ class RagasMetricEvaluator:
                     arguments(sample),
                     sample.case_id,
                 )
-            except Exception as error:
+            except (TypeError, AttributeError, NameError, ImportError) as error:
                 raise MetricEvaluationError(
-                    f"RAGAS {metric_name.value} failed for case {sample.case_id}"
+                    f"RAGAS {metric_name.value} is misconfigured "
+                    f"for case {sample.case_id}"
                 ) from error
+            except Exception as error:
+                logger.warning(
+                    "RAGAS metric unscorable; recording a failing score: "
+                    "metric=%s case=%s",
+                    metric_name.value,
+                    sample.case_id,
+                    exc_info=True,
+                )
+                result = self._unscored_result(metric_name, sample.case_id, error)
             results.append(result)
         return tuple(results)
+
+    @staticmethod
+    def _unscored_result(
+        metric_name: MetricName,
+        case_id: str,
+        error: Exception,
+    ) -> MetricResult:
+        """Record a failing score for a metric that could not be computed.
+
+        A single unscorable metric (empty retrieved contexts, a truncated judge
+        completion, a transient API error that outlived the retry) must not
+        abort the whole experiment — that turns a quality verdict into an
+        operational error and discards every other case. Recording 0.0 with the
+        cause lets the run finish and the gate report an honest violation.
+
+        Only data/infrastructure failures land here; misconfiguration
+        (``TypeError``/``AttributeError``/``NameError``/``ImportError``) is
+        re-raised by the caller so genuine bugs fail fast instead of
+        masquerading as low quality scores.
+        """
+        raw = {
+            "value": 0.0,
+            "reason": "metric could not be scored",
+            "error": f"{type(error).__name__}: {error}",
+        }
+        return MetricResult(
+            metric=metric_name,
+            score=Score(0.0),
+            case_id=case_id,
+            raw_result_json=json.dumps(raw, ensure_ascii=False, default=str),
+        )
 
     @classmethod
     def _score_with_retry(

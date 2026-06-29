@@ -21,6 +21,7 @@ from evaluation.domain.values import (
     ThresholdScope,
 )
 from evaluation.infrastructure.profile_json import JsonProfileRepository
+from evaluation.infrastructure.ragas_adapter import RagasMetricEvaluator
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +113,37 @@ def test_quality_gate_applies_snapshot_thresholds() -> None:
 
     decision = gate.evaluate(report)
 
+    assert decision.passed is False
+    assert decision.violations[0].case_id == "case"
+
+
+def test_recorded_unscorable_metric_fails_gate_instead_of_aborting() -> None:
+    now = datetime.now(UTC)
+    unscorable = RagasMetricEvaluator._unscored_result(
+        MetricName.FAITHFULNESS,
+        "case",
+        ValueError("retrieved_contexts cannot be empty"),
+    )
+    retrieval = RetrievalEvaluationSample("case", "Question?", (), ())
+    answer = AnswerEvaluationSample(
+        "case", "Question?", "Answer.", "Answer.", (), False, True, 1
+    )
+    report = EvaluationReport(
+        run_id="run",
+        profile_id="profile",
+        profile_version="1",
+        started_at=now,
+        finished_at=now,
+        cases=(CaseResult("case", retrieval, answer, (unscorable,)),),
+        aggregate_metrics=(),
+    )
+    gate = QualityGate(
+        (Threshold(MetricName.FAITHFULNESS, Score(0.8), ThresholdScope.CASE),)
+    )
+
+    decision = gate.evaluate(report)
+
+    assert unscorable.score == Score(0.0)
     assert decision.passed is False
     assert decision.violations[0].case_id == "case"
 
