@@ -10,8 +10,8 @@ Orphaned points (no user assignment) are left untouched.
 Because ownership comes from the DB, every backfilled point is guaranteed to
 satisfy retrieval's PostgreSQL cross-check as well as the Qdrant filter.
 
-Run where ``MEDIC_DATABASE_URL`` points at the target DB and ``QdrantURL`` at
-the target collection (i.e. the production environment)::
+Run inside the target environment (e.g. the production ``app`` container) so the
+configured database and Qdrant collection are the ones you intend to migrate::
 
     python -m scripts.backfill_owner_payload --dry-run   # report only
     python -m scripts.backfill_owner_payload             # apply
