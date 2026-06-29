@@ -8,14 +8,6 @@ on:
         required: true
         default: medical-demo-v1
         type: string
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-  schedule:
-    # Nightly post-merge quality gate (04:00 UTC).
-    - cron: "0 4 * * *"
 
 permissions:
   contents: read
