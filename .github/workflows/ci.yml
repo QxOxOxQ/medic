@@ -147,6 +147,18 @@ jobs:
           sudo firewall-cmd --reload
           sudo firewall-cmd --list-all
 
+      - name: Reclaim disk space
+        run: |
+          set -euo pipefail
+          df -h /
+          # Drop stopped containers, unreferenced images and build cache so the
+          # incoming image can be extracted. Images held by the running stack and
+          # all named volumes (PostgreSQL data) are never touched.
+          sudo docker container prune --force
+          sudo docker image prune --all --force
+          sudo docker builder prune --all --force
+          df -h /
+
       - name: Validate and deploy stack
         run: |
           set -euo pipefail
@@ -195,3 +207,8 @@ jobs:
           done
 
           sudo --preserve-env=MEDIC_IMAGE docker compose -f docker-compose.prod.yml ps
+
+          # The previous deployment's image is now unreferenced; reclaim it so the
+          # runner keeps only the live image and disk usage stays bounded.
+          sudo docker image prune --all --force
+          df -h /
