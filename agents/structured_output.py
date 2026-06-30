@@ -20,7 +20,17 @@ class StrictPayload(BaseModel):
 class ResearchPlanPayload(StrictPayload):
     mode: Literal["record_grounded", "general_information", "clarify"]
     response_language: str = Field(min_length=1)
-    queries: list[str] = Field(default_factory=list)
+    queries: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Retrieval queries, each a terse phrase of concrete clinical terms "
+            "for one concept (not a generic meta-phrase). The record language "
+            "is unknown before searching and often differs from the question, "
+            "so cover the most important concepts in both the question's "
+            "language and English; decompose broad or whole-health questions "
+            "into several specific facet queries."
+        ),
+    )
 
     def to_domain(self, *, max_queries: int) -> ResearchPlan:
         queries = _normalized_unique(self.queries)[:max_queries]

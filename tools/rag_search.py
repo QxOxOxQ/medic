@@ -28,8 +28,13 @@ class RagRetriever(Protocol):
 class RagSearchTool:
     name = "search_user_medical_documents"
     description = (
-        "Search the current user's indexed medical documents. "
-        "Use a focused query. The user scope is enforced by the backend."
+        "Search the current user's indexed medical documents. Write the query "
+        "as a terse phrase of concrete clinical terms — anatomy, imaging "
+        "modality, test/analyte names, medications, diagnoses — covering one "
+        "concept, not a generic meta-phrase. Records may be in a different "
+        "language than the question (often English or Latin), so cover key "
+        "concepts in both the question's language and English. The user scope "
+        "is enforced by the backend."
     )
 
     def __init__(
