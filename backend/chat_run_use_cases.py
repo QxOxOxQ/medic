@@ -225,7 +225,10 @@ class StartChatRunUseCase:
             message = (
                 str(error)
                 if isinstance(error, AgentExecutionError)
-                else "Agent execution failed"
+                else (
+                    "The assistant couldn't complete this answer. "
+                    "This is usually temporary — please try again in a moment."
+                )
             )
             self._store.fail_run(run_id=run_id, error=message)
 

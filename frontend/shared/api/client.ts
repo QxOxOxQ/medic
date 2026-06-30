@@ -31,12 +31,29 @@ export async function api<T>(
     ? ((await response.json()) as Record<string, unknown>)
     : { detail: await response.text() };
   if (!response.ok) {
+    const detail = payload.detail ?? payload.error;
     throw new ApiError(
-      String(payload.detail ?? payload.error ?? `HTTP ${response.status}`),
+      detail ? String(detail) : statusMessage(response.status),
       response.status,
     );
   }
   return payload as T;
+}
+
+function statusMessage(status: number): string {
+  if (status === 401 || status === 403) {
+    return "Your session has expired. Please sign in again.";
+  }
+  if (status === 404) {
+    return "We couldn't find what you were looking for.";
+  }
+  if (status === 429) {
+    return "Too many requests right now. Please wait a moment and retry.";
+  }
+  if (status >= 500) {
+    return "The service is temporarily unavailable. Please try again shortly.";
+  }
+  return "The request couldn't be completed. Please try again.";
 }
 
 export function jsonRequest(method: string, body: unknown): RequestInit {

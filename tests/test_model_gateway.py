@@ -122,7 +122,7 @@ def test_text_failure_sanitizes_public_error_and_logs_detail(
     public_error = str(caught.value)
     assert public_error == (
         "professor model call during synthesis via model-a failed. "
-        "See server logs for details."
+        "This is usually temporary — please try again in a moment."
     )
     assert raw_error not in public_error
     failed_event = next(
@@ -205,7 +205,7 @@ def test_retry_records_each_failed_attempt_in_trace() -> None:
     assert len(retry_events) == 2
     for event in retry_events:
         assert event.payload["error"] == (
-            "Transient model provider error; retrying. "
-            "See server logs for details."
+            "A temporary issue reaching the model provider interrupted this step; "
+            "retrying automatically."
         )
         assert "Provider returned error" not in str(event.payload["error"])

@@ -34,6 +34,7 @@ export function AssistantView(): JSX.Element {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [answering, setAnswering] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
   const [source, setSource] = useState<Source | null>(null);
   const [connectionWarning, setConnectionWarning] = useState("");
@@ -41,6 +42,7 @@ export function AssistantView(): JSX.Element {
   const [selectedModel, setSelectedModel] = useState("");
   const [savingModel, setSavingModel] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
+  const liveRef = useRef<HTMLElement>(null);
 
   useEffect(
     () => () => {
@@ -48,6 +50,29 @@ export function AssistantView(): JSX.Element {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!answering) {
+      setElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsed(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [answering]);
+
+  useEffect(() => {
+    if (!answering) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    liveRef.current?.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [answering, liveTrace.length]);
 
   useEffect(() => {
     void (async () => {
@@ -73,7 +98,9 @@ export function AssistantView(): JSX.Element {
     } catch (caught) {
       setSelectedModel(previous);
       setError(
-        caught instanceof Error ? caught.message : "Could not save model choice",
+        caught instanceof Error
+          ? caught.message
+          : "Couldn't save your model choice. Please try again.",
       );
     } finally {
       setSavingModel(false);
@@ -94,7 +121,9 @@ export function AssistantView(): JSX.Element {
       }
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not load conversations",
+        caught instanceof Error
+          ? caught.message
+          : "Couldn't load your conversations. Please refresh to try again.",
       );
     } finally {
       setLoading(false);
@@ -114,7 +143,11 @@ export function AssistantView(): JSX.Element {
       setLiveTrace([]);
       setSource(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load conversation");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Couldn't open that conversation. Please try again.",
+      );
     }
   };
 
@@ -140,7 +173,11 @@ export function AssistantView(): JSX.Element {
       connectRun(payload.run.run_id, normalized);
     } catch (caught) {
       setAnswering(false);
-      setError(caught instanceof Error ? caught.message : "Could not start agent");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Couldn't start the assistant. Please try again.",
+      );
     }
   };
 
@@ -221,7 +258,7 @@ export function AssistantView(): JSX.Element {
           </Button>
         </div>
       </section>
-      {connectionWarning ? (
+      {connectionWarning && !answering ? (
         <Alert title="Reconnecting">{connectionWarning}</Alert>
       ) : null}
       {failure ? (
@@ -274,13 +311,12 @@ export function AssistantView(): JSX.Element {
               ))
             )}
             {answering ? (
-              <article class={styles.message}>
-                <div class={styles.itemHeader}>
-                  <strong>Agent execution</strong>
-                  <StatusBadge status="running" />
-                </div>
-                <Trace events={liveTrace} empty="Waiting for coordinator…" />
-              </article>
+              <LiveActivity
+                events={liveTrace}
+                elapsed={elapsed}
+                connectionWarning={connectionWarning}
+                panelRef={liveRef}
+              />
             ) : null}
             {!answering && failure ? (
               <article class={styles.message}>
@@ -326,6 +362,52 @@ export function AssistantView(): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+function LiveActivity({
+  events,
+  elapsed,
+  connectionWarning,
+  panelRef,
+}: {
+  events: TraceEvent[];
+  elapsed: number;
+  connectionWarning: string;
+  panelRef: { current: HTMLElement | null };
+}): JSX.Element {
+  const latest = events.at(-1)?.title;
+  const note = connectionWarning
+    ? connectionWarning
+    : elapsed >= 30
+      ? "Taking longer than usual — still working…"
+      : "";
+  return (
+    <article class={styles.message} ref={panelRef} aria-busy="true">
+      <div class={styles.itemHeader}>
+        <strong>Agent execution</strong>
+        <StatusBadge status="running" />
+      </div>
+      <div class={styles.liveStatus}>
+        <span class={styles.thinkingDots} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span class={styles.liveLabel}>{latest ?? "Starting up…"}</span>
+        <span class={styles.elapsed} aria-hidden="true">
+          {formatElapsed(elapsed)}
+        </span>
+      </div>
+      {note ? <p class={styles.liveHint}>{note}</p> : null}
+      <Trace events={events} empty="Starting up…" />
+    </article>
+  );
+}
+
+function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
 
 function Message({

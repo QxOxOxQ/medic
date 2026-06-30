@@ -38,7 +38,10 @@ from agents.trace import AgentTraceRecorder
 
 
 AGENT_PROMPT_VERSION = "agents-v2"
-_AGENT_FAILURE_MESSAGE = "Agent execution failed. See server logs for details."
+_AGENT_FAILURE_MESSAGE = (
+    "The assistant couldn't complete this answer. "
+    "This is usually temporary — please try again in a moment."
+)
 
 logger = logging.getLogger("medic.agents.graph")
 

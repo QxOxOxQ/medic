@@ -30,7 +30,8 @@ from agents.trace import AgentTraceRecorder
 PROFESSOR_AGENT_NAME = "professor"
 RAG_TOOL_NAME = "search_user_medical_documents"
 _RETRIEVAL_FAILURE_MESSAGE = (
-    "Professor document retrieval failed. See server logs for details."
+    "Couldn't search your indexed documents right now. "
+    "Please try again in a moment."
 )
 
 logger = logging.getLogger("medic.agents.professor")

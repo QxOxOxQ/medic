@@ -255,6 +255,14 @@
   display: none;
 }
 
+.mobileSelectAll {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .selectionBar {
   position: sticky;
   z-index: 15;
@@ -481,6 +489,67 @@
   white-space: pre-wrap;
 }
 
+.liveStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.liveLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.elapsed {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.liveHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.thinkingDots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.thinkingDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--info-700);
+  animation: thinkingPulse 1.2s ease-in-out infinite;
+}
+
+.thinkingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinkingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinkingPulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .citation {
   min-height: 0;
   border: 0;
@@ -612,6 +681,10 @@
     gap: var(--space-3);
   }
 
+  .mobileSelectAll {
+    display: flex;
+  }
+
   .event {
     grid-template-columns: 1fr;
     gap: 4px;
@@ -633,5 +706,12 @@
 
   .composer {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingDots span {
+    animation: none;
+    opacity: 0.7;
   }
 }

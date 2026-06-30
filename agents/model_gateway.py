@@ -32,9 +32,10 @@ PayloadT = TypeVar("PayloadT", bound=BaseModel)
 _ResultT = TypeVar("_ResultT")
 logger = logging.getLogger("medic.agents.model_gateway")
 
-_LOG_DETAILS_MESSAGE = "See server logs for details."
+_RETRY_HINT = "This is usually temporary — please try again in a moment."
 _RETRY_ERROR_MESSAGE = (
-    f"Transient model provider error; retrying. {_LOG_DETAILS_MESSAGE}"
+    "A temporary issue reaching the model provider interrupted this step; "
+    "retrying automatically."
 )
 
 
@@ -219,11 +220,11 @@ class AgentModelGateway:
             self._record_failure(
                 agent_name=agent_name,
                 phase=phase,
-                public_error="Agent returned invalid structured output. "
-                f"{_LOG_DETAILS_MESSAGE}",
+                public_error="The assistant produced a malformed response for one "
+                f"step. {_RETRY_HINT}",
             )
             raise AgentExecutionError(
-                f"Agent returned invalid structured output. {_LOG_DETAILS_MESSAGE}"
+                f"The assistant produced a malformed response for one step. {_RETRY_HINT}"
             )
 
         self._record_success(
@@ -286,11 +287,11 @@ class AgentModelGateway:
             self._record_failure(
                 agent_name=agent_name,
                 phase=phase,
-                public_error="Agent model returned an unsupported message. "
-                f"{_LOG_DETAILS_MESSAGE}",
+                public_error="The assistant returned an unexpected response for one "
+                f"step. {_RETRY_HINT}",
             )
             raise AgentExecutionError(
-                f"Agent model returned an unsupported message. {_LOG_DETAILS_MESSAGE}"
+                f"The assistant returned an unexpected response for one step. {_RETRY_HINT}"
             )
 
         self._record_success(
@@ -417,7 +418,7 @@ def _describe_failure(
     model_part = f" via {label}" if label else ""
     return (
         f"{agent_name} {action} during {phase}{model_part} failed. "
-        f"{_LOG_DETAILS_MESSAGE}"
+        f"{_RETRY_HINT}"
     )
 
 

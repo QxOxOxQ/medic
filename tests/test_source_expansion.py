@@ -210,7 +210,8 @@ def test_context_collector_sanitizes_retrieval_error_and_logs_detail(
         collector.collect(("knee MRI",))
 
     assert str(caught.value) == (
-        "Professor document retrieval failed. See server logs for details."
+        "Couldn't search your indexed documents right now. "
+        "Please try again in a moment."
     )
     assert raw_error not in str(caught.value)
     failed_event = next(

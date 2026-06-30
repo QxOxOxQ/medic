@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { navigate } from "../../app/router";
 import { api, jsonRequest, uploadRequest } from "../../shared/api/client";
 import type {
@@ -127,6 +127,34 @@ export function DocumentsView(): JSX.Element {
       const next = new Set(current);
       if (next.has(document.id as string)) next.delete(document.id as string);
       else next.add(document.id as string);
+      return next;
+    });
+  };
+
+  const allOnPageSelected =
+    documents.length > 0 &&
+    documents.filter((d) => d.id).every((d) => selected.has(d.id as string));
+  const someOnPageSelected =
+    !allOnPageSelected &&
+    documents.some((d) => d.id && selected.has(d.id as string));
+
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someOnPageSelected;
+    }
+  }, [someOnPageSelected, allOnPageSelected]);
+
+  const toggleAll = (): void => {
+    const ids = documents.filter((d) => d.id).map((d) => d.id as string);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allOnPageSelected) {
+        ids.forEach((id) => next.delete(id));
+      } else {
+        ids.forEach((id) => next.add(id));
+      }
       return next;
     });
   };
@@ -337,7 +365,15 @@ export function DocumentsView(): JSX.Element {
               <table class={styles.table}>
                 <thead>
                   <tr>
-                    <th>Select</th>
+                    <th>
+                      <input
+                        type="checkbox"
+                        ref={selectAllRef}
+                        checked={allOnPageSelected}
+                        aria-label="Select all documents on this page"
+                        onChange={toggleAll}
+                      />
+                    </th>
                     <th>Document</th>
                     <th>Status</th>
                     <th>Artifacts</th>
@@ -358,6 +394,15 @@ export function DocumentsView(): JSX.Element {
                 </tbody>
               </table>
             </div>
+            <label class={styles.mobileSelectAll}>
+              <input
+                type="checkbox"
+                checked={allOnPageSelected}
+                aria-label="Select all documents on this page"
+                onChange={toggleAll}
+              />
+              Zaznacz wszystkie na stronie
+            </label>
             <div class={styles.mobileCards}>
               {documents.map((document) => (
                 <DocumentCard
