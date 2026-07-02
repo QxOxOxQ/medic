@@ -1,48 +1,50 @@
-# Czteroetapowy plan wdrożenia nowego UI/UX Medic RAG
+# Four-Stage Plan For The New Medic RAG UI/UX
 
-> Status na 29 czerwca 2026: wszystkie cztery etapy zostały zaimplementowane,
-> a fallback `/legacy` został usunięty po przejściu aplikacji na Preact UI.
+> Status as of June 29, 2026: all four stages have been implemented, and the
+> `/legacy` fallback was removed once the application fully moved to the
+> Preact UI.
 
-## Cel produktu
+## Product Goal
 
-Nowy interfejs prowadzi jednego operatora przez cały proces:
+The new interface carries a single operator through the whole process:
 
 `upload → process → inspect → search/ask → verify source`
 
-Ta sama osoba może zarządzać dokumentami i zadawać pytania. Dlatego główna
-nawigacja nie rozdziela trybu „operatora” i „użytkownika agenta”. Zamiast tego
-udostępnia sześć spójnych przestrzeni: Overview, Documents, Pipeline,
-Assistant, Retrieval i Admin.
+The same person can manage documents and ask questions. So the main
+navigation doesn't split an "operator" mode from an "agent user" mode.
+Instead it offers six consistent workspaces: Overview, Documents, Pipeline,
+Assistant, Retrieval, and Admin.
 
-Interfejs stosuje progressive disclosure. Najważniejszy stan i następna akcja
-są widoczne od razu, natomiast dane techniczne — markdown, chunki, punkty
-Qdrant, eventy i trace — są dostępne w drawerach, zakładkach i rozwijanych
-inspectorach.
+The interface uses progressive disclosure. The most important state and the
+next action are visible immediately, while technical data — markdown,
+chunks, Qdrant points, events, and traces — live in drawers, tabs, and
+expandable inspectors.
 
-## Architektura docelowa
+## Target Architecture
 
 ### Frontend
 
-- Preact 10, TypeScript, Vite 8 i CSS Modules.
-- Brak globalnego store. Dane serwera są pobierane przez wyspecjalizowane
-  komponenty i klienta `frontend/shared/api/client.ts`.
-- Filtry Documents oraz otwarty dokument, zakładka i chunk są przechowywane
-  w URL.
-- Typy API są generowane z OpenAPI do
+- Preact 10, TypeScript, Vite 8, and CSS Modules.
+- No global store. Server data is fetched by specialized components and the
+  `frontend/shared/api/client.ts` client.
+- Documents filters, the open document, tab, and chunk are all persisted in
+  the URL.
+- API types are generated from OpenAPI into
   `frontend/shared/api/schema.d.ts`.
-- Jinja renderuje wyłącznie punkt wejścia aplikacji i korzysta z manifestu
-  Vite do ładowania hashowanych assetów.
+- Jinja renders only the application's entry point and uses the Vite
+  manifest to load hashed assets.
 
 ### Backend
 
-- Presentation: endpointy FastAPI, walidacja Pydantic, HTTP i SSE.
-- Application: przypadki użycia pipeline i asynchronicznych runów agenta.
-- Infrastructure: repozytoria SQLAlchemy, wykonawca w tle, Qdrant i filesystem.
-- Domain/core: modele agentów i RAG bez zależności od FastAPI, Pydantic ani
-  SQLAlchemy.
-- Operacje użytkownika są ograniczane przez `owner_user_id`.
+- Presentation: FastAPI endpoints, Pydantic validation, HTTP and SSE.
+- Application: pipeline and asynchronous agent-run use cases.
+- Infrastructure: SQLAlchemy repositories, the background executor, Qdrant,
+  and the filesystem.
+- Domain/core: agent and RAG models with no dependency on FastAPI, Pydantic,
+  or SQLAlchemy.
+- User operations are scoped by `owner_user_id`.
 
-### Przepływ danych
+### Data Flow
 
 ```mermaid
 flowchart LR
@@ -56,193 +58,202 @@ flowchart LR
     SSE --> UI
 ```
 
-## Etap 1 — Fundament techniczny i design system
+## Stage 1 — Technical Foundation And Design System
 
-### Zakres
+### Scope
 
-- Utworzenie aplikacji Preact w katalogu `frontend/`.
-- App shell z responsywną nawigacją i zachowaniem bezpośrednich adresów.
-- Design tokens dla kolorów, spacingu, typografii, radiusów, breakpointów
-  i cieni.
-- Komponenty Button, IconButton, StatusBadge, Alert, Toast, Dialog, Drawer,
-  Tabs, EmptyState, LoadingState, ErrorState i Skeleton.
-- Focus trap w modalach, obsługa Escape, nawigacja strzałkami w Tabs,
-  `focus-visible`, WCAG AA i `prefers-reduced-motion`.
-- `AssetManifest` i build Vite do `dashboard/static/dist`.
-- Node.js 24 w obrazie buildowym i osobny watcher frontendu w Compose.
-- Usunięcie starego dashboardu po osiągnięciu parytetowości w Preact UI.
+- Create the Preact application under `frontend/`.
+- App shell with responsive navigation and deep-linkable routes.
+- Design tokens for color, spacing, typography, radii, breakpoints, and
+  shadows.
+- Button, IconButton, StatusBadge, Alert, Toast, Dialog, Drawer, Tabs,
+  EmptyState, LoadingState, ErrorState, and Skeleton components.
+- Focus trap in modals, Escape handling, arrow-key navigation in Tabs,
+  `focus-visible`, WCAG AA, and `prefers-reduced-motion`.
+- `AssetManifest` and a Vite build into `dashboard/static/dist`.
+- Node.js 24 in the build image, with a separate frontend watcher in
+  Compose.
+- Removal of the old dashboard once feature parity with the Preact UI was
+  reached.
 
-### Widok Overview
+### Overview View
 
-- Stan PostgreSQL i Qdrant.
-- Liczba dokumentów, markdownów i punktów indeksu.
-- Workflow Upload → Prepare → Index → Ask → Verify.
-- Ostatni run pipeline i ostatnia rozmowa.
-- Bezpośrednie akcje do Documents, Pipeline i Assistant.
+- PostgreSQL and Qdrant health state.
+- Document, markdown, and index-point counts.
+- The Upload → Prepare → Index → Ask → Verify workflow.
+- The latest pipeline run and the latest conversation.
+- Direct actions into Documents, Pipeline, and Assistant.
 
-### Kryterium odbioru
+### Acceptance Criteria
 
-- `/`, `/overview`, `/documents`, `/pipeline`, `/assistant` i `/retrieval`
-  działają po bezpośrednim wejściu.
-- Login, logout i `/admin` pozostają funkcjonalne.
-- `make dev` uruchamia watchery Python i frontend.
-- Obraz runtime zawiera wyłącznie zbudowane, hashowane assety.
+- `/`, `/overview`, `/documents`, `/pipeline`, `/assistant`, and `/retrieval`
+  all work on direct navigation.
+- Login, logout, and `/admin` remain functional.
+- `make dev` starts both the Python and frontend watchers.
+- The runtime image contains only built, hashed assets.
 
-## Etap 2 — Documents i Retrieval
+## Stage 2 — Documents And Retrieval
 
-### Kontrakty
+### Contracts
 
-- `GET /api/documents` obsługuje pagination, query, status, sort i direction.
-- Domyślny page size wynosi 25, maksymalny 100.
-- Szczegóły dokumentu są adresowane UUID:
+- `GET /api/documents` supports pagination, query, status, sort, and
+  direction.
+- The default page size is 25, the maximum is 100.
+- Document details are addressed by UUID:
   - `GET /api/documents/{document_id}`
   - `GET /api/documents/{document_id}/markdown`
   - `GET /api/documents/{document_id}/chunks`
   - `GET /api/documents/{document_id}/index-points`
-- Zakładki techniczne są ładowane niezależnie. Otworzenie Markdown/Chunks nie
-  wykonuje zapytania o punkty Qdrant.
-- `POST /api/search` przyjmuje typowane `query` i `limit`, a zwraca czas,
-  ranking oraz metadane źródła.
+- Technical tabs load independently. Opening Markdown/Chunks doesn't trigger
+  a Qdrant points query.
+- `POST /api/search` accepts a typed `query` and `limit`, and returns
+  timing, ranking, and source metadata.
 
-### UX Documents
+### Documents UX
 
-- Drop zone i kolejka wyników per plik.
-- Tabela desktopowa i karty mobilne.
-- Filtry oraz pozycja inspectora w URL.
-- Sticky selection bar z Run pipeline, Delete i Clear.
-- Drawer z Overview, Markdown, Chunks i Index points.
-- Link z retrieval lub cytowania otwiera dokładny chunk i wyróżnia go.
-- Dialog usuwania jawnie pokazuje wpływ na PDF, markdown, PostgreSQL i Qdrant.
+- A drop zone and a per-file results queue.
+- A desktop table and mobile cards.
+- Filters and the inspector position live in the URL.
+- A sticky selection bar with Run pipeline, Delete, and Clear.
+- A drawer with Overview, Markdown, Chunks, and Index points.
+- A link from retrieval or a citation opens the exact chunk and highlights
+  it.
+- The delete dialog explicitly shows the impact on the PDF, markdown,
+  PostgreSQL, and Qdrant.
 
-### UX Retrieval
+### Retrieval UX
 
-- Query i limit.
-- Ranking z score, dokumentem, chunk index, zakresem znaków, point ID, hashem
-  i excerptem.
-- Oddzielne komunikaty dla pustego indeksu, braku wyników, niedostępnego
-  Qdrant i błędu requestu.
+- Query and limit.
+- A ranking with score, document, chunk index, character range, point ID,
+  hash, and excerpt.
+- Separate messages for an empty index, no results, an unavailable Qdrant,
+  and a request error.
 
-### Kryterium odbioru
+### Acceptance Criteria
 
-- Lista dokumentów nie pobiera całego manifestu i skaluje się do co najmniej
-  1000 rekordów.
-- Widok 390 px nie ma poziomego overflow.
-- Upload → inspect → retrieval działa w Preact UI.
+- The document list doesn't fetch the entire manifest and scales to at
+  least 1000 records.
+- The 390px viewport has no horizontal overflow.
+- Upload → inspect → retrieval works in the Preact UI.
 
-## Etap 3 — Trwały i transparentny Pipeline
+## Stage 3 — Durable And Transparent Pipeline
 
-### Model i granice
+### Model And Boundaries
 
-- Migracja `0006_pipeline_runs` dodaje:
+- Migration `0006_pipeline_runs` adds:
   - `pipeline_runs`
   - `pipeline_run_documents`
   - `pipeline_run_events`
-- Run zapisuje ownera, status, timestamps, summary i error.
-- Dokument runu zachowuje UUID oraz snapshot nazwy i ścieżki.
-- Event ma rosnący sequence, step, status, message, counters i result JSON.
-- Application zawiera:
+- A run records the owner, status, timestamps, summary, and error.
+- A run document keeps the UUID plus a snapshot of the name and path.
+- An event has an increasing sequence, step, status, message, counters, and
+  a result JSON.
+- The application layer includes:
   - `StartPipelineRunUseCase`
   - `ListPipelineRunsUseCase`
   - `GetPipelineRunUseCase`
   - `StreamPipelineEventsUseCase`
-- Repozytorium i wykonawca są portami. `FullProcess` pozostaje wykonawcą RAG.
+- The repository and executor are ports. `FullProcess` remains the RAG
+  executor.
 
-### Runtime i SSE
+### Runtime And SSE
 
-- W danej chwili może działać jeden globalny pipeline.
-- Aktywne runy po restarcie są oznaczane jako `interrupted`.
-- SSE odtwarza eventy zapisane w PostgreSQL, respektuje `Last-Event-ID`
-  i kończy się eventem `done`.
-- Frontend deduplikuje eventy po sequence i pozwala natywnemu EventSource
-  automatycznie wznowić połączenie.
+- Only one global pipeline can run at a time.
+- Active runs are marked `interrupted` after a restart.
+- SSE replays events stored in PostgreSQL, respects `Last-Event-ID`, and
+  ends with a `done` event.
+- The frontend deduplicates events by sequence and lets the native
+  EventSource reconnect automatically.
 
-### UX Pipeline
+### Pipeline UX
 
-- Sześć etapów, procent postępu, aktualny dokument i ostatnie liczniki.
-- Filtrowalny timeline z rozwijanymi result JSON.
-- Wynik każdego dokumentu.
-- Historia runów trwała po restarcie.
-- Jawne stany queued, running, succeeded, failed i interrupted.
+- Six stages, a progress percentage, the current document, and the latest
+  counters.
+- A filterable timeline with expandable result JSON.
+- A per-document result.
+- Run history persists across restarts.
+- Explicit queued, running, succeeded, failed, and interrupted states.
 
-### Kryterium odbioru
+### Acceptance Criteria
 
-- Restart nie usuwa historii.
-- Replay od konkretnego sequence nie duplikuje eventów.
-- Błąd zawiera etap, komunikat i trwały zapis w historii.
+- A restart doesn't erase history.
+- Replaying from a specific sequence doesn't duplicate events.
+- An error carries the step, the message, and a durable record in history.
 
-## Etap 4 — Assistant live trace, dostępność i finalizacja
+## Stage 4 — Assistant Live Trace, Accessibility, And Finalization
 
-### Backend agenta
+### Agent Backend
 
-- `AgentTraceRecorder` publikuje każdy event do portu `AgentTraceSink`.
-- SQLAlchemy zapisuje eventy inkrementalnie do `chat_trace_events`.
-- Finalizacja runu jest idempotentnym backfillem brakujących eventów.
-- Agent wykonuje się poza requestem HTTP.
-- Jedna rozmowa może mieć jeden aktywny run.
-- Run po restarcie otrzymuje `interrupted`.
-- Endpointy:
+- `AgentTraceRecorder` publishes every event to the `AgentTraceSink` port.
+- SQLAlchemy incrementally persists events to `chat_trace_events`.
+- Run finalization is an idempotent backfill of any missing events.
+- The agent runs outside the HTTP request.
+- A single conversation can have one active run.
+- A run gets `interrupted` after a restart.
+- Endpoints:
   - `POST /api/chat/runs`
   - `GET /api/chat/runs/{run_id}`
   - `GET /api/chat/runs/{run_id}/events`
 
-### UX Assistant
+### Assistant UX
 
-- Desktop: lista rozmów, chat i drawer Source Inspector.
-- Mobile: jedna kolumna i pełnoekranowy drawer.
-- Enter wysyła, Shift+Enter dodaje linię.
-- Live timeline pokazuje fazy coordinator, specialist, retrieval, review,
-  synthesis i error.
-- Trace zapisanej odpowiedzi jest domyślnie zwinięty.
-- Cytowanie otwiera pełne metadane i prowadzi do konkretnego chunku.
-- Błąd runu przywraca pytanie i udostępnia retry.
+- Desktop: a conversation list, chat, and a Source Inspector drawer.
+- Mobile: a single column and a full-screen drawer.
+- Enter sends, Shift+Enter adds a line.
+- The live timeline shows the coordinator, specialist, retrieval, review,
+  synthesis, and error phases.
+- A saved answer's trace is collapsed by default.
+- A citation opens full metadata and jumps to the exact chunk.
+- A failed run restores the question and offers a retry.
 
-### Finalizacja jakości
+### Quality Finalization
 
-- Vitest i Testing Library pokrywają shell, Tabs, dialog i stany UI.
-- Playwright i axe uruchamiają ten sam scenariusz dla 1440, 1024 i 390 px.
-- Sprawdzane są: keyboard-only, kontrast, dialogi, drawers, tabs, chat,
-  citations i brak poziomego overflow.
-- `make verify` wykonuje typowanie TypeScript, testy frontendu, build Vite,
-  Ruff, strict mypy i pytest.
+- Vitest and Testing Library cover the shell, Tabs, dialogs, and UI states.
+- Playwright and axe run the same scenario at 1440, 1024, and 390px.
+- Checked: keyboard-only navigation, contrast, dialogs, drawers, tabs, chat,
+  citations, and no horizontal overflow.
+- `make verify` runs TypeScript typechecking, frontend tests, the Vite
+  build, Ruff, strict mypy, and pytest.
 
-### Końcowy scenariusz E2E
+### Final E2E Scenario
 
-1. Upload trzech demo PDF.
-2. Zaznaczenie dokumentów.
-3. Pipeline z live eventami.
-4. Inspekcja markdown, chunks i index points.
-5. Retrieval search.
-6. Pytanie do agenta z live trace.
-7. Otwarcie cytowania i źródłowego chunku.
-8. Restart i potwierdzenie historii pipeline oraz rozmów.
+1. Upload three demo PDFs.
+2. Select documents.
+3. Run the pipeline with live events.
+4. Inspect markdown, chunks, and index points.
+5. Run a retrieval search.
+6. Ask the agent a question with a live trace.
+7. Open a citation and its source chunk.
+8. Restart, and confirm pipeline and conversation history survived.
 
-## Strategia wdrożenia i rollback
+## Rollout And Rollback Strategy
 
-- Każdy etap zachowuje istniejące API lub dodaje nowe endpointy.
-- Rollback frontendu wymaga przywrócenia poprzedniej wersji obrazu runtime.
-- Migracja bazy jest addytywna; downgrade usuwa wyłącznie nowe tabele i
-  przywraca poprzedni constraint statusu chat run.
-- Assety są atomowo dostarczane z obrazem runtime przez manifest Vite.
-- Usunięcie starego vanilla JS/CSS następuje dopiero po przejściu końcowego
-  E2E i potwierdzeniu parytetu funkcji.
+- Each stage keeps existing APIs, or adds new endpoints.
+- Rolling back the frontend means restoring the previous runtime image.
+- The database migration is additive; downgrading only drops the new tables
+  and restores the previous chat-run status constraint.
+- Assets ship atomically with the runtime image via the Vite manifest.
+- Removal of the old vanilla JS/CSS dashboard happened only after the final
+  E2E pass and confirmed feature parity.
 
-## Wynik weryfikacji implementacji
+## Implementation Verification Result
 
-- `make verify`: zakończone poprawnie.
-- Python: 240 testów zakończonych poprawnie, 2 testy integracyjne pominięte.
-- TypeScript: strict typecheck zakończony poprawnie.
-- Frontend: Vitest i produkcyjny build Vite zakończone poprawnie.
-- Docker: obraz runtime zbudowany i uruchomiony jako `medic:medic`.
-- Smoke test obrazu: migracje, healthcheck, login, bezpośredni `/documents`,
-  hashowane CSS/JS, Overview, Pipeline i Conversations zwróciły poprawne
-  odpowiedzi.
-- `npm audit --omit=dev`: zero podatności runtime.
-- Dwie umiarkowane podatności pozostają w transytywnym parserze YAML narzędzia
-  `openapi-typescript`. Pakiet przetwarza lokalny, generowany przez aplikację
-  plik OpenAPI i nie jest kopiowany do obrazu runtime. Aktualna wersja
-  `openapi-typescript` nie udostępnia jeszcze kompatybilnej poprawki.
-- Playwright/axe: 6/6 testów zakończonych poprawnie dla viewportów 1440, 1024
-  i 390 px. Zweryfikowano brak krytycznych/poważnych naruszeń axe, brak
-  poziomego overflow oraz dostępność głównej nawigacji z klawiatury.
-- Pełny scenariusz z uploadem trzech PDF, live pipeline, live agentem i
-  restartem wymaga skonfigurowanych usług Qdrant/OpenRouter.
+- `make verify`: passed.
+- Python: 240 tests passed, 2 integration tests skipped.
+- TypeScript: strict typecheck passed.
+- Frontend: Vitest and the production Vite build passed.
+- Docker: the runtime image was built and run as `medic:medic`.
+- Image smoke test: migrations, healthcheck, login, direct `/documents`
+  navigation, hashed CSS/JS, and the Overview, Pipeline, and Conversations
+  views all returned correct responses.
+- `npm audit --omit=dev`: zero runtime vulnerabilities.
+- Two moderate vulnerabilities remain in the transitive YAML parser used by
+  the `openapi-typescript` tool. That package only processes a local,
+  application-generated OpenAPI file and isn't copied into the runtime
+  image. The current `openapi-typescript` release doesn't yet ship a
+  compatible fix.
+- Playwright/axe: 6/6 tests passed at the 1440, 1024, and 390px viewports.
+  Verified: no critical/serious axe violations, no horizontal overflow, and
+  full keyboard access to the main navigation.
+- The full scenario — three-PDF upload, live pipeline, live agent, and a
+  restart — requires configured Qdrant/OpenRouter services.

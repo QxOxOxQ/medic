@@ -160,6 +160,23 @@ class DocumentRepository:
             )
         )
 
+    def get_duplicate_by_content_hash(
+        self,
+        *,
+        owner_user_id: UUID,
+        content_hash: str,
+        exclude_relative_raw_path: str,
+    ) -> Document | None:
+        return self._session.scalar(
+            select(Document)
+            .where(
+                Document.owner_user_id == owner_user_id,
+                Document.content_hash == content_hash,
+                Document.relative_raw_path != exclude_relative_raw_path,
+            )
+            .limit(1)
+        )
+
     def get_by_parsed_markdown_path(self, parsed_markdown_path: str) -> Document | None:
         return self._session.scalar(
             select(Document).where(Document.parsed_markdown_path == parsed_markdown_path)

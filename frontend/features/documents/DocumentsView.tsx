@@ -159,7 +159,7 @@ export function DocumentsView(): JSX.Element {
     });
   };
 
-  const upload = async (): Promise<void> => {
+  const upload = async (processAfterUpload: boolean): Promise<void> => {
     if (!files.length) return;
     setUploading(true);
     setMessage("");
@@ -174,10 +174,30 @@ export function DocumentsView(): JSX.Element {
         uploadRequest(files),
       );
       setUploadResults(payload.results);
-      setMessage(
-        `${payload.uploaded_count} uploaded, ${payload.failed_count} failed.`,
-      );
       setFiles([]);
+      const uploadSummary = `${payload.uploaded_count} uploaded, ${payload.failed_count} failed.`;
+      const uploadedIds = payload.results
+        .filter((result) => result.status === "uploaded" && result.document_id)
+        .map((result) => result.document_id as string);
+      if (processAfterUpload && uploadedIds.length) {
+        try {
+          await api(
+            "/api/pipeline-runs",
+            jsonRequest("POST", { document_ids: uploadedIds }),
+          );
+          navigate("/pipeline");
+          return;
+        } catch (caught) {
+          setMessage(
+            `${uploadSummary} Pipeline could not start: ${
+              caught instanceof Error ? caught.message : "unknown error"
+            }`,
+          );
+          await load();
+          return;
+        }
+      }
+      setMessage(uploadSummary);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Upload failed");
@@ -273,7 +293,10 @@ export function DocumentsView(): JSX.Element {
           />
           <div>
             <strong>Drop PDF files here or choose files</strong>
-            <span>Files are validated before they enter the document pipeline.</span>
+            <span>
+              Upload &amp; process runs the whole pipeline (parse, chunk, embed,
+              index) in one step.
+            </span>
           </div>
         </label>
         {files.length ? (
@@ -289,8 +312,17 @@ export function DocumentsView(): JSX.Element {
               ))}
             </ul>
             <div class={styles.actions}>
-              <Button disabled={uploading} onClick={() => void upload()}>
-                {uploading ? "Uploading…" : `Upload ${files.length} file(s)`}
+              <Button disabled={uploading} onClick={() => void upload(true)}>
+                {uploading
+                  ? "Processing…"
+                  : `Upload & process ${files.length} file(s)`}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={uploading}
+                onClick={() => void upload(false)}
+              >
+                Upload only
               </Button>
               <Button variant="ghost" onClick={() => setFiles([])}>
                 Clear

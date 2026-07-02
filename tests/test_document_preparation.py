@@ -407,7 +407,7 @@ def test_prepare_documents_converts_new_pdf_to_markdown(
     assert "Preparing raw document 1/1: clinical/report.pdf" in messages
     assert "Prepared raw document: clinical/report.pdf parsed=clinical/report.md" in messages
     assert (
-        "Finished document preparation: scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 failed=0"
+        "Finished document preparation: scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 duplicates_removed=0 failed=0"
         in messages
     )
 
@@ -686,6 +686,100 @@ def test_prepare_documents_prunes_deleted_raw_documents(
         assert keep.status == "prepared"
         assert remove is not None
         assert remove.status == "stale"
+
+
+def test_prepare_documents_removes_duplicate_upload(tmp_path) -> None:
+    settings = _settings_for(tmp_path)
+    factory = _database_session_factory(tmp_path)
+    user_id = _seed_user(factory)
+    original_pdf = settings.raw_documents_dir / "first" / "report.pdf"
+    duplicate_pdf = settings.raw_documents_dir / "second" / "report.pdf"
+    original_pdf.parent.mkdir(parents=True)
+    duplicate_pdf.parent.mkdir(parents=True)
+    original_pdf.write_bytes(b"%PDF-1.7")
+    duplicate_pdf.write_bytes(b"%PDF-1.7")
+    with factory() as session:
+        repository = DocumentRepository(session)
+        repository.create_uploaded_document(
+            owner_user_id=user_id,
+            original_filename="report.pdf",
+            relative_raw_path="first/report.pdf",
+            byte_size=original_pdf.stat().st_size,
+        )
+        repository.create_uploaded_document(
+            owner_user_id=user_id,
+            original_filename="report-copy.pdf",
+            relative_raw_path="second/report.pdf",
+            byte_size=duplicate_pdf.stat().st_size,
+        )
+        session.commit()
+
+    summary = prepare_documents(
+        parser=lambda path: "Identical content",
+        settings=settings,
+        database_session_factory=factory,
+        owner_user_id=user_id,
+    )
+
+    assert summary == PreparationSummary(scanned=2, prepared=1, duplicates_removed=1)
+    assert original_pdf.exists()
+    assert not duplicate_pdf.exists()
+    assert not duplicate_pdf.parent.exists()
+    with factory() as session:
+        repository = DocumentRepository(session)
+        assert repository.get_by_relative_raw_path("first/report.pdf") is not None
+        assert repository.get_by_relative_raw_path("second/report.pdf") is None
+
+
+def test_prepare_documents_keeps_reprocessed_document_with_matching_content(
+    tmp_path,
+) -> None:
+    settings = _settings_for(tmp_path)
+    factory = _database_session_factory(tmp_path)
+    user_id = _seed_user(factory)
+    first_pdf = settings.raw_documents_dir / "first" / "report.pdf"
+    second_pdf = settings.raw_documents_dir / "second" / "other.pdf"
+    first_pdf.parent.mkdir(parents=True)
+    second_pdf.parent.mkdir(parents=True)
+    first_pdf.write_bytes(b"%PDF-1.7")
+    second_pdf.write_bytes(b"%PDF-1.7")
+    with factory() as session:
+        repository = DocumentRepository(session)
+        repository.upsert_prepared_document(
+            owner_user_id=user_id,
+            relative_raw_path="first/report.pdf",
+            original_filename="report.pdf",
+            parsed_markdown_path=None,
+            content_hash=calculate_text_sha256("Converged content\n"),
+            byte_size=first_pdf.stat().st_size,
+            processed_at=datetime.fromisoformat("2026-06-02T10:40:22+00:00"),
+            status="prepared",
+        )
+        repository.upsert_prepared_document(
+            owner_user_id=user_id,
+            relative_raw_path="second/other.pdf",
+            original_filename="other.pdf",
+            parsed_markdown_path=None,
+            content_hash="previous-different-hash",
+            byte_size=second_pdf.stat().st_size,
+            processed_at=datetime.fromisoformat("2026-06-02T10:40:22+00:00"),
+            status="prepared",
+        )
+        session.commit()
+
+    summary = prepare_documents(
+        parser=lambda path: "Converged content",
+        settings=settings,
+        database_session_factory=factory,
+        owner_user_id=user_id,
+    )
+
+    assert summary.duplicates_removed == 0
+    assert first_pdf.exists()
+    assert second_pdf.exists()
+    with factory() as session:
+        repository = DocumentRepository(session)
+        assert repository.get_by_relative_raw_path("second/other.pdf") is not None
 
 
 def test_prepare_documents_selected_paths_do_not_mark_unselected_documents_stale(

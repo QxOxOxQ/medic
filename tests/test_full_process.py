@@ -54,7 +54,10 @@ def test_full_process_execute_indexes_parsed_files_with_checksum_metadata(
 
     captured = capsys.readouterr()
     assert result == summary
-    assert captured.out == "scanned=2 prepared=0 reprepared=0 pruned=0 skipped=2 failed=0\n"
+    assert captured.out == (
+        "scanned=2 prepared=0 reprepared=0 pruned=0 skipped=2 "
+        "duplicates_removed=0 failed=0\n"
+    )
     assert indexed_calls == [
         {
             "text": "content 1",
@@ -81,7 +84,8 @@ def test_full_process_execute_indexes_parsed_files_with_checksum_metadata(
     assert messages == [
         "Starting ingestion",
         "Preparing documents",
-        "Document preparation finished: scanned=2 prepared=0 reprepared=0 pruned=0 skipped=2 failed=0",
+        "Document preparation finished: scanned=2 prepared=0 reprepared=0 "
+        "pruned=0 skipped=2 duplicates_removed=0 failed=0",
         f"Indexing parsed markdown files: directory={parsed_dir} files=2",
         "Indexing parsed markdown file 1/2: doc1.md",
         "Indexed parsed markdown file 1/2: doc1.md chunks=1",

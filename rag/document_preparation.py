@@ -80,6 +80,7 @@ class PreparationSummary:
     reprepared: int = 0
     pruned: int = 0
     skipped: int = 0
+    duplicates_removed: int = 0
     failed: int = 0
     failed_paths: list[str] = field(default_factory=list)
 
@@ -90,6 +91,7 @@ class PreparationSummary:
             f"reprepared={self.reprepared} "
             f"pruned={self.pruned} "
             f"skipped={self.skipped} "
+            f"duplicates_removed={self.duplicates_removed} "
             f"failed={self.failed}"
         )
 
@@ -624,6 +626,39 @@ def prepare_documents(
             )
             continue
 
+        duplicate_of = _duplicate_original_filename(
+            database_session_factory=database_session_factory,
+            owner_user_id=owner_user_id,
+            content_hash=content_hash,
+            relative_raw_path=relative_raw_key,
+            is_fresh_document=item.previous_content_hash is None,
+        )
+        if duplicate_of is not None:
+            _remove_duplicate_document(
+                database_session_factory=database_session_factory,
+                relative_raw_path=relative_raw_key,
+                raw_document_path=raw_document_path,
+                parsed_markdown_path=parsed_markdown_path,
+                raw_documents_dir=settings.raw_documents_dir,
+            )
+            summary.duplicates_removed += 1
+            logger.info(
+                "Removed duplicate raw document: %s duplicate_of=%s",
+                relative_raw_key,
+                duplicate_of,
+            )
+            progress.emit(
+                step="prepare",
+                status="skipped",
+                message=(
+                    f"Removed duplicate {relative_raw_key} "
+                    f"(same content as {duplicate_of})"
+                ),
+                counters={"index": index, "total": len(work_items)},
+                result={"path": relative_raw_key, "duplicate_of": duplicate_of},
+            )
+            continue
+
         _write_markdown(parsed_markdown_path, markdown)
         _mark_prepared_document(
             database_session_factory=database_session_factory,
@@ -777,6 +812,57 @@ def _database_work_items(
             )
             for key in sorted(selected_keys)
         ]
+
+
+def _duplicate_original_filename(
+    *,
+    database_session_factory: sessionmaker[Session] | None,
+    owner_user_id: UUID | None,
+    content_hash: str,
+    relative_raw_path: str,
+    is_fresh_document: bool,
+) -> str | None:
+    if not is_fresh_document:
+        return None
+    if database_session_factory is None or owner_user_id is None:
+        return None
+    with database_session_factory() as session:
+        original = DocumentRepository(session).get_duplicate_by_content_hash(
+            owner_user_id=owner_user_id,
+            content_hash=content_hash,
+            exclude_relative_raw_path=relative_raw_path,
+        )
+        return None if original is None else original.original_filename
+
+
+def _remove_duplicate_document(
+    *,
+    database_session_factory: sessionmaker[Session] | None,
+    relative_raw_path: str,
+    raw_document_path: Path,
+    parsed_markdown_path: Path,
+    raw_documents_dir: Path,
+) -> None:
+    _delete_file_if_exists(parsed_markdown_path)
+    _delete_file_if_exists(raw_document_path)
+    _remove_empty_parent(raw_document_path, stop_at=raw_documents_dir)
+    if database_session_factory is None:
+        return
+    with database_session_factory() as session:
+        repository = DocumentRepository(session)
+        document = repository.get_by_relative_raw_path(relative_raw_path)
+        if document is not None:
+            repository.delete_document(document)
+        session.commit()
+
+
+def _remove_empty_parent(path: Path, *, stop_at: Path) -> None:
+    parent = path.parent
+    try:
+        if parent != stop_at:
+            parent.rmdir()
+    except OSError:
+        return
 
 
 def _existing_markdown_hash(markdown_path: Path) -> str | None:

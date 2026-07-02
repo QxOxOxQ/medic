@@ -79,7 +79,7 @@ def test_main_prepare_returns_zero_and_prints_summary(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 failed=0\n"
+    assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 duplicates_removed=0 failed=0\n"
 
 def test_main_ingest_runs_full_process(monkeypatch, capsys) -> None:
     def failing_prepare_documents() -> PreparationSummary:
@@ -98,4 +98,4 @@ def test_main_ingest_runs_full_process(monkeypatch, capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 failed=0\n"
+    assert captured.out == "scanned=1 prepared=1 reprepared=0 pruned=0 skipped=0 duplicates_removed=0 failed=0\n"

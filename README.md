@@ -113,3 +113,9 @@ evaluation/   RAGAS + Langfuse quality gates
 - [docs/evaluation.md](docs/evaluation.md) — RAGAS/Langfuse quality gates and CI.
 - [docs/deployment.md](docs/deployment.md) — production, OCI, and the portable
   runtime image.
+- [docs/business/rag-weaknesses.md](docs/business/rag-weaknesses.md) — an honest,
+  code-referenced audit of known RAG limitations and the fix roadmap.
+- [docs/ui-ux-implementation-plan.md](docs/ui-ux-implementation-plan.md) — the
+  four-stage plan behind the current Preact dashboard (historical, fully shipped).
+- [docs/agent-prompt-authoring-brief.md](docs/agent-prompt-authoring-brief.md) —
+  the brief behind the multi-agent prompt suite in `agents/prompts/`.

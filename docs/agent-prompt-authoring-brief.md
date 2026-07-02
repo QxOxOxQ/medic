@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document briefs an implementation agent that will write production-grade prompts for the Medic RAG medical assistant. The target output is replacement text for the existing prompt files, not a redesign of the application architecture.
+This is the brief used to author the production-grade prompts in `agents/prompts/`. It doubles as the reference for future prompt changes: the target output is replacement text for the existing prompt files, not a redesign of the application architecture.
 
 Medic RAG is a medical document assistant for authenticated users. Users upload PDF documents, the system processes those documents into searchable medical knowledge, and the chat assistant answers questions through the dashboard with source visibility and execution traceability.
 
