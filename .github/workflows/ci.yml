@@ -122,6 +122,21 @@ jobs:
           install -m 0644 docker-compose.prod.yml /opt/medic/docker-compose.prod.yml
           test -s /opt/medic/.env
 
+      - name: Sync production environment secrets
+        env:
+          OPENROUTER_MANAGEMENT_API_KEY: ${{ secrets.OPENROUTER_MANAGEMENT_API_KEY }}
+        run: |
+          set -euo pipefail
+          if test -z "${OPENROUTER_MANAGEMENT_API_KEY:-}"; then
+            exit 0
+          fi
+          env_file=/opt/medic/.env
+          tmp_file="$(mktemp)"
+          trap 'rm -f "${tmp_file}"' EXIT
+          grep -v '^OPENROUTER_MANAGEMENT_API_KEY=' "${env_file}" > "${tmp_file}" || true
+          printf 'OPENROUTER_MANAGEMENT_API_KEY=%s\n' "${OPENROUTER_MANAGEMENT_API_KEY}" >> "${tmp_file}"
+          install -m 0600 "${tmp_file}" "${env_file}"
+
       - name: Bootstrap Docker on runner
         run: |
           set -euo pipefail

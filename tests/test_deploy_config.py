@@ -132,6 +132,10 @@ def test_ci_workflow_deploys_to_production_only_from_main_on_self_hosted() -> No
     # Same-repo deploy uses the built-in token, never a cross-repo PAT.
     assert "DEPLOY_DISPATCH_TOKEN" not in workflow
     assert "secrets.GITHUB_TOKEN" in workflow
+    assert "secrets.OPENROUTER_MANAGEMENT_API_KEY" in workflow
+    assert "OPENROUTER_MANAGEMENT_API_KEY: ${{" in workflow
+    assert "grep -v '^OPENROUTER_MANAGEMENT_API_KEY='" in workflow
+    assert "printf 'OPENROUTER_MANAGEMENT_API_KEY=%s\\n'" in workflow
 
     # Deploy drives the production compose stack from the repository root.
     assert (

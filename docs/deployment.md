@@ -73,6 +73,11 @@ MEDIC_SESSION_SECRET=replace-with-a-long-random-secret
 If the PostgreSQL password contains URL-reserved characters, percent-encode it
 inside `MEDIC_DATABASE_URL`.
 
+`OPENROUTER_MANAGEMENT_API_KEY` can be managed as a GitHub Actions environment
+secret named `OPENROUTER_MANAGEMENT_API_KEY` on the `production` environment.
+The deploy job syncs that secret into `/opt/medic/.env` on the self-hosted
+runner before restarting the Compose stack.
+
 The OCI Network Security Group attached to the instance must allow ingress from
 `0.0.0.0/0` to TCP port `8000`. The `deploy` job opens the matching host
 `firewalld` rule automatically.
