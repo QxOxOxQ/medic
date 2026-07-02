@@ -86,6 +86,7 @@ def index(request: Request) -> Response:
 @router.get("/pipeline", response_class=HTMLResponse)
 @router.get("/assistant", response_class=HTMLResponse)
 @router.get("/retrieval", response_class=HTMLResponse)
+@router.get("/llm-providers", response_class=HTMLResponse)
 def application_route(request: Request) -> Response:
     return _application_page(request)
 

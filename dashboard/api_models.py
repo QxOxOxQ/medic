@@ -34,6 +34,104 @@ class ChatModelSettingsResponse(BaseModel):
     selected: str
 
 
+class MoneyDto(BaseModel):
+    amount: str
+    currency: str
+
+
+class ProviderIssueDto(BaseModel):
+    section: str
+    message: str
+
+
+class LLMProviderCreditsDto(BaseModel):
+    total_credits: MoneyDto
+    total_usage: MoneyDto
+    remaining_credits: MoneyDto
+
+
+class LLMProviderKeyStatsDto(BaseModel):
+    label: str
+    usage: MoneyDto
+    usage_daily: MoneyDto
+    usage_weekly: MoneyDto
+    usage_monthly: MoneyDto
+    byok_usage: MoneyDto
+    byok_usage_daily: MoneyDto
+    byok_usage_weekly: MoneyDto
+    byok_usage_monthly: MoneyDto
+    include_byok_in_limit: bool
+    is_free_tier: bool
+    is_management_key: bool
+    is_provisioning_key: bool
+    limit: MoneyDto | None
+    limit_remaining: MoneyDto | None
+    limit_reset: str | None
+    expires_at: datetime | None
+
+
+class LLMProviderActivityTotalsDto(BaseModel):
+    usage: MoneyDto
+    byok_usage: MoneyDto
+    requests: int
+    prompt_tokens: int
+    completion_tokens: int
+    reasoning_tokens: int
+
+
+class LLMProviderModelActivityDto(BaseModel):
+    model: str
+    provider_name: str
+    totals: LLMProviderActivityTotalsDto
+    last_activity_date: str | None
+
+
+class LLMProviderProviderActivityDto(BaseModel):
+    provider_name: str
+    totals: LLMProviderActivityTotalsDto
+    last_activity_date: str | None
+
+
+class LLMProviderActivityDto(BaseModel):
+    window_label: str
+    completed_utc_days: int
+    totals: LLMProviderActivityTotalsDto
+    top_models: list[LLMProviderModelActivityDto]
+    top_providers: list[LLMProviderProviderActivityDto]
+
+
+class ConfiguredAgentModelDto(BaseModel):
+    agent_name: str
+    model_id: str
+
+
+class LLMProviderConfigurationDto(BaseModel):
+    chat_provider: str
+    chat_model: str
+    embedding_provider: str
+    embedding_model: str
+    agent_models: list[ConfiguredAgentModelDto]
+    selectable_models: list[ChatModelOptionDto]
+
+
+class LLMProviderDto(BaseModel):
+    provider_key: str
+    provider_name: str
+    status: str
+    message: str | None
+    issues: list[ProviderIssueDto]
+    credits: LLMProviderCreditsDto | None
+    api_key: LLMProviderKeyStatsDto | None
+    activity: LLMProviderActivityDto | None
+
+
+class LLMProviderStatsResponse(BaseModel):
+    ok: bool = True
+    generated_at: datetime
+    configuration: LLMProviderConfigurationDto
+    providers: list[LLMProviderDto]
+
+
 class DocumentDeleteRequest(BaseModel):
     document_ids: list[UUID] = Field(min_length=1)
 

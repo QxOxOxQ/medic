@@ -1,6 +1,7 @@
 x-app-environment: &app-environment
   MEDIC_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-medic}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-medic}"
   OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
+  OPENROUTER_MANAGEMENT_API_KEY: "${OPENROUTER_MANAGEMENT_API_KEY:-}"
   QdrantURL: "${QdrantURL:?QdrantURL is required}"
   QdrantApiKey: "${QdrantApiKey:?QdrantApiKey is required}"
   MEDIC_QDRANT_COLLECTION: "${MEDIC_QDRANT_COLLECTION:-hybrid_medic_oci_documents}"

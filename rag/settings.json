@@ -5,6 +5,7 @@
     "qdrant_collection_name": "MEDIC_QDRANT_COLLECTION",
     "database_url": "MEDIC_DATABASE_URL",
     "openrouter_api_key": "OPENROUTER_API_KEY",
+    "openrouter_management_api_key": "OPENROUTER_MANAGEMENT_API_KEY",
     "run_openrouter_live_tests": "RUN_OPENROUTER_LIVE_TESTS",
     "run_qdrant_live_tests": "RUN_QDRANT_LIVE_TESTS",
     "run_postgres_live_tests": "RUN_POSTGRES_LIVE_TESTS"

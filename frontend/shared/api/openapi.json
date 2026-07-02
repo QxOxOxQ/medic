@@ -669,6 +669,24 @@
         "title": "ChunkDto",
         "type": "object"
       },
+      "ConfiguredAgentModelDto": {
+        "properties": {
+          "agent_name": {
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_name",
+          "model_id"
+        ],
+        "title": "ConfiguredAgentModelDto",
+        "type": "object"
+      },
       "ConversationDto": {
         "properties": {
           "created_at": {
@@ -1241,6 +1259,444 @@
         "title": "IndexPreviewDto",
         "type": "object"
       },
+      "LLMProviderActivityDto": {
+        "properties": {
+          "completed_utc_days": {
+            "title": "Completed Utc Days",
+            "type": "integer"
+          },
+          "top_models": {
+            "items": {
+              "$ref": "#/components/schemas/LLMProviderModelActivityDto"
+            },
+            "title": "Top Models",
+            "type": "array"
+          },
+          "top_providers": {
+            "items": {
+              "$ref": "#/components/schemas/LLMProviderProviderActivityDto"
+            },
+            "title": "Top Providers",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/LLMProviderActivityTotalsDto"
+          },
+          "window_label": {
+            "title": "Window Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_label",
+          "completed_utc_days",
+          "totals",
+          "top_models",
+          "top_providers"
+        ],
+        "title": "LLMProviderActivityDto",
+        "type": "object"
+      },
+      "LLMProviderActivityTotalsDto": {
+        "properties": {
+          "byok_usage": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "reasoning_tokens": {
+            "title": "Reasoning Tokens",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MoneyDto"
+          }
+        },
+        "required": [
+          "usage",
+          "byok_usage",
+          "requests",
+          "prompt_tokens",
+          "completion_tokens",
+          "reasoning_tokens"
+        ],
+        "title": "LLMProviderActivityTotalsDto",
+        "type": "object"
+      },
+      "LLMProviderConfigurationDto": {
+        "properties": {
+          "agent_models": {
+            "items": {
+              "$ref": "#/components/schemas/ConfiguredAgentModelDto"
+            },
+            "title": "Agent Models",
+            "type": "array"
+          },
+          "chat_model": {
+            "title": "Chat Model",
+            "type": "string"
+          },
+          "chat_provider": {
+            "title": "Chat Provider",
+            "type": "string"
+          },
+          "embedding_model": {
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "embedding_provider": {
+            "title": "Embedding Provider",
+            "type": "string"
+          },
+          "selectable_models": {
+            "items": {
+              "$ref": "#/components/schemas/ChatModelOptionDto"
+            },
+            "title": "Selectable Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "chat_provider",
+          "chat_model",
+          "embedding_provider",
+          "embedding_model",
+          "agent_models",
+          "selectable_models"
+        ],
+        "title": "LLMProviderConfigurationDto",
+        "type": "object"
+      },
+      "LLMProviderCreditsDto": {
+        "properties": {
+          "remaining_credits": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "total_credits": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "total_usage": {
+            "$ref": "#/components/schemas/MoneyDto"
+          }
+        },
+        "required": [
+          "total_credits",
+          "total_usage",
+          "remaining_credits"
+        ],
+        "title": "LLMProviderCreditsDto",
+        "type": "object"
+      },
+      "LLMProviderDto": {
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMProviderActivityDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMProviderKeyStatsDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMProviderCreditsDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderIssueDto"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "provider_key": {
+            "title": "Provider Key",
+            "type": "string"
+          },
+          "provider_name": {
+            "title": "Provider Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_key",
+          "provider_name",
+          "status",
+          "message",
+          "issues",
+          "credits",
+          "api_key",
+          "activity"
+        ],
+        "title": "LLMProviderDto",
+        "type": "object"
+      },
+      "LLMProviderKeyStatsDto": {
+        "properties": {
+          "byok_usage": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "byok_usage_daily": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "byok_usage_monthly": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "byok_usage_weekly": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "include_byok_in_limit": {
+            "title": "Include Byok In Limit",
+            "type": "boolean"
+          },
+          "is_free_tier": {
+            "title": "Is Free Tier",
+            "type": "boolean"
+          },
+          "is_management_key": {
+            "title": "Is Management Key",
+            "type": "boolean"
+          },
+          "is_provisioning_key": {
+            "title": "Is Provisioning Key",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoneyDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit_remaining": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoneyDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit_reset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Reset"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "usage_daily": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "usage_monthly": {
+            "$ref": "#/components/schemas/MoneyDto"
+          },
+          "usage_weekly": {
+            "$ref": "#/components/schemas/MoneyDto"
+          }
+        },
+        "required": [
+          "label",
+          "usage",
+          "usage_daily",
+          "usage_weekly",
+          "usage_monthly",
+          "byok_usage",
+          "byok_usage_daily",
+          "byok_usage_weekly",
+          "byok_usage_monthly",
+          "include_byok_in_limit",
+          "is_free_tier",
+          "is_management_key",
+          "is_provisioning_key",
+          "limit",
+          "limit_remaining",
+          "limit_reset",
+          "expires_at"
+        ],
+        "title": "LLMProviderKeyStatsDto",
+        "type": "object"
+      },
+      "LLMProviderModelActivityDto": {
+        "properties": {
+          "last_activity_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity Date"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider_name": {
+            "title": "Provider Name",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/LLMProviderActivityTotalsDto"
+          }
+        },
+        "required": [
+          "model",
+          "provider_name",
+          "totals",
+          "last_activity_date"
+        ],
+        "title": "LLMProviderModelActivityDto",
+        "type": "object"
+      },
+      "LLMProviderProviderActivityDto": {
+        "properties": {
+          "last_activity_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity Date"
+          },
+          "provider_name": {
+            "title": "Provider Name",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/LLMProviderActivityTotalsDto"
+          }
+        },
+        "required": [
+          "provider_name",
+          "totals",
+          "last_activity_date"
+        ],
+        "title": "LLMProviderProviderActivityDto",
+        "type": "object"
+      },
+      "LLMProviderStatsResponse": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/LLMProviderConfigurationDto"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/LLMProviderDto"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "configuration",
+          "providers"
+        ],
+        "title": "LLMProviderStatsResponse",
+        "type": "object"
+      },
+      "MoneyDto": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "title": "MoneyDto",
+        "type": "object"
+      },
       "PipelineDocumentDto": {
         "properties": {
           "current_step": {
@@ -1524,6 +1980,24 @@
           "error"
         ],
         "title": "PostgresStatusDto",
+        "type": "object"
+      },
+      "ProviderIssueDto": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "message"
+        ],
+        "title": "ProviderIssueDto",
         "type": "object"
       },
       "QdrantStatusDto": {
@@ -1951,6 +2425,24 @@
           }
         },
         "summary": "Index"
+      }
+    },
+    "/api/admin/llm-providers": {
+      "get": {
+        "operationId": "llm_provider_stats_api_admin_llm_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMProviderStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Provider Stats"
       }
     },
     "/api/chat/conversations": {
@@ -3022,6 +3514,24 @@
     "/documents": {
       "get": {
         "operationId": "application_route_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Application Route"
+      }
+    },
+    "/llm-providers": {
+      "get": {
+        "operationId": "application_route_llm_providers_get",
         "responses": {
           "200": {
             "content": {

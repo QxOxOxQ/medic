@@ -1,6 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 
-export type Route = "overview" | "documents" | "pipeline" | "assistant" | "retrieval";
+export type Route =
+  | "overview"
+  | "documents"
+  | "pipeline"
+  | "assistant"
+  | "retrieval"
+  | "llm-providers";
 
 const routes: Record<string, Route> = {
   "/": "overview",
@@ -9,6 +15,7 @@ const routes: Record<string, Route> = {
   "/pipeline": "pipeline",
   "/assistant": "assistant",
   "/retrieval": "retrieval",
+  "/llm-providers": "llm-providers",
 };
 
 export function currentRoute(): Route {

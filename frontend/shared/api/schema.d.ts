@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/llm-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Llm Provider Stats */
+        get: operations["llm_provider_stats_api_admin_llm_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/conversations": {
         parameters: {
             query?: never;
@@ -499,6 +516,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/llm-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Application Route */
+        get: operations["application_route_llm_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/login": {
         parameters: {
             query?: never;
@@ -837,6 +871,13 @@ export interface components {
             /** Index */
             index: number;
         };
+        /** ConfiguredAgentModelDto */
+        ConfiguredAgentModelDto: {
+            /** Agent Name */
+            agent_name: string;
+            /** Model Id */
+            model_id: string;
+        };
         /** ConversationDto */
         ConversationDto: {
             /**
@@ -1046,6 +1087,136 @@ export interface components {
              */
             shown_points: number;
         };
+        /** LLMProviderActivityDto */
+        LLMProviderActivityDto: {
+            /** Completed Utc Days */
+            completed_utc_days: number;
+            /** Top Models */
+            top_models: components["schemas"]["LLMProviderModelActivityDto"][];
+            /** Top Providers */
+            top_providers: components["schemas"]["LLMProviderProviderActivityDto"][];
+            totals: components["schemas"]["LLMProviderActivityTotalsDto"];
+            /** Window Label */
+            window_label: string;
+        };
+        /** LLMProviderActivityTotalsDto */
+        LLMProviderActivityTotalsDto: {
+            byok_usage: components["schemas"]["MoneyDto"];
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Reasoning Tokens */
+            reasoning_tokens: number;
+            /** Requests */
+            requests: number;
+            usage: components["schemas"]["MoneyDto"];
+        };
+        /** LLMProviderConfigurationDto */
+        LLMProviderConfigurationDto: {
+            /** Agent Models */
+            agent_models: components["schemas"]["ConfiguredAgentModelDto"][];
+            /** Chat Model */
+            chat_model: string;
+            /** Chat Provider */
+            chat_provider: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Embedding Provider */
+            embedding_provider: string;
+            /** Selectable Models */
+            selectable_models: components["schemas"]["ChatModelOptionDto"][];
+        };
+        /** LLMProviderCreditsDto */
+        LLMProviderCreditsDto: {
+            remaining_credits: components["schemas"]["MoneyDto"];
+            total_credits: components["schemas"]["MoneyDto"];
+            total_usage: components["schemas"]["MoneyDto"];
+        };
+        /** LLMProviderDto */
+        LLMProviderDto: {
+            activity: components["schemas"]["LLMProviderActivityDto"] | null;
+            api_key: components["schemas"]["LLMProviderKeyStatsDto"] | null;
+            credits: components["schemas"]["LLMProviderCreditsDto"] | null;
+            /** Issues */
+            issues: components["schemas"]["ProviderIssueDto"][];
+            /** Message */
+            message: string | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Provider Name */
+            provider_name: string;
+            /** Status */
+            status: string;
+        };
+        /** LLMProviderKeyStatsDto */
+        LLMProviderKeyStatsDto: {
+            byok_usage: components["schemas"]["MoneyDto"];
+            byok_usage_daily: components["schemas"]["MoneyDto"];
+            byok_usage_monthly: components["schemas"]["MoneyDto"];
+            byok_usage_weekly: components["schemas"]["MoneyDto"];
+            /** Expires At */
+            expires_at: string | null;
+            /** Include Byok In Limit */
+            include_byok_in_limit: boolean;
+            /** Is Free Tier */
+            is_free_tier: boolean;
+            /** Is Management Key */
+            is_management_key: boolean;
+            /** Is Provisioning Key */
+            is_provisioning_key: boolean;
+            /** Label */
+            label: string;
+            limit: components["schemas"]["MoneyDto"] | null;
+            limit_remaining: components["schemas"]["MoneyDto"] | null;
+            /** Limit Reset */
+            limit_reset: string | null;
+            usage: components["schemas"]["MoneyDto"];
+            usage_daily: components["schemas"]["MoneyDto"];
+            usage_monthly: components["schemas"]["MoneyDto"];
+            usage_weekly: components["schemas"]["MoneyDto"];
+        };
+        /** LLMProviderModelActivityDto */
+        LLMProviderModelActivityDto: {
+            /** Last Activity Date */
+            last_activity_date: string | null;
+            /** Model */
+            model: string;
+            /** Provider Name */
+            provider_name: string;
+            totals: components["schemas"]["LLMProviderActivityTotalsDto"];
+        };
+        /** LLMProviderProviderActivityDto */
+        LLMProviderProviderActivityDto: {
+            /** Last Activity Date */
+            last_activity_date: string | null;
+            /** Provider Name */
+            provider_name: string;
+            totals: components["schemas"]["LLMProviderActivityTotalsDto"];
+        };
+        /** LLMProviderStatsResponse */
+        LLMProviderStatsResponse: {
+            configuration: components["schemas"]["LLMProviderConfigurationDto"];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            /** Providers */
+            providers: components["schemas"]["LLMProviderDto"][];
+        };
+        /** MoneyDto */
+        MoneyDto: {
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+        };
         /** PipelineDocumentDto */
         PipelineDocumentDto: {
             /** Current Step */
@@ -1149,6 +1320,13 @@ export interface components {
             available: boolean;
             /** Error */
             error: string | null;
+        };
+        /** ProviderIssueDto */
+        ProviderIssueDto: {
+            /** Message */
+            message: string;
+            /** Section */
+            section: string;
         };
         /** QdrantStatusDto */
         QdrantStatusDto: {
@@ -1278,6 +1456,26 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
+                };
+            };
+        };
+    };
+    llm_provider_stats_api_admin_llm_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMProviderStatsResponse"];
                 };
             };
         };
@@ -2128,6 +2326,26 @@ export interface operations {
         };
     };
     application_route_documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    application_route_llm_providers_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any, cast
 from uuid import UUID
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -12,15 +14,24 @@ from agents.trace import AgentTraceRecorder
 from agents.trace import AgentTraceSink
 from backend.chat_use_cases import ChatConversationUseCase
 from backend.full_document_reader import ParsedMarkdownDocumentReader
+from backend.llm_provider_stats import (
+    ConfiguredModel,
+    GetLLMProviderStatsUseCase,
+    LLMProviderConfiguration,
+    OpenRouterProviderStatsPort,
+)
 from backend.use_cases import AnswerQuestionUseCase
 from clients.chat_models import (
     ChatModelFactory,
+    SELECTABLE_CHAT_MODELS,
     get_chat_model_settings,
     resolve_chat_model,
 )
 from clients.chat_models.settings import ChatModelSettings
+from clients.openrouter_provider_stats import OpenRouterProviderStatsGateway
 from rag.retrieval import RetrievalService
 from observability import build_agent_observability
+from rag.config import SETTINGS
 from rag.database.chat_store import SqlAlchemyChatConversationStore
 from rag.database.repositories import UserRepository
 from tools import ObservedRagSearchPort, RagSearchTool, SourceLedger
@@ -52,6 +63,16 @@ def build_chat_conversation_use_case(
             observability=observability,
         ),
         conversation_store=SqlAlchemyChatConversationStore(database_session_factory),
+    )
+
+
+def build_llm_provider_stats_use_case(
+    *,
+    openrouter_gateway: OpenRouterProviderStatsPort | None = None,
+) -> GetLLMProviderStatsUseCase:
+    return GetLLMProviderStatsUseCase(
+        openrouter=openrouter_gateway or OpenRouterProviderStatsGateway(),
+        configuration=_llm_provider_configuration(SETTINGS),
     )
 
 
@@ -184,3 +205,34 @@ def _build_chat_models(
             models_by_id[resolved_id] = factory.create(chat_settings, model=resolved_id)
         overrides[role] = RoutedModel(model=models_by_id[resolved_id], label=resolved_id)
     return default_model, overrides
+
+
+def _llm_provider_configuration(
+    settings: Mapping[str, Any],
+) -> LLMProviderConfiguration:
+    chat_settings = _mapping(settings["chat"])
+    embedding_settings = _mapping(settings["embedding"])
+    return LLMProviderConfiguration(
+        chat_provider=str(chat_settings["provider"]),
+        chat_model=str(chat_settings["model"]),
+        embedding_provider=str(embedding_settings["provider"]),
+        embedding_model=str(embedding_settings["model"]),
+        agent_models={
+            str(role): str(model)
+            for role, model in _mapping(chat_settings.get("models", {})).items()
+        },
+        selectable_models=tuple(
+            ConfiguredModel(
+                key=model.key,
+                label=model.label,
+                model_id=model.model_id,
+            )
+            for model in SELECTABLE_CHAT_MODELS
+        ),
+    )
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("Expected mapping configuration")
+    return cast(Mapping[str, Any], value)

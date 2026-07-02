@@ -26,13 +26,16 @@ from backend.pipeline_use_cases import (
 from backend.factory import (
     build_agent_runner_factory,
     build_chat_conversation_use_case,
+    build_llm_provider_stats_use_case,
 )
+from backend.llm_provider_stats import GetLLMProviderStatsUseCase
 from backend.routes import router as backend_router
 from dashboard.admin import configure_admin
 from dashboard.auth import AuthSettings, load_auth_settings
 from dashboard.dependencies import current_user as resolve_current_user
 from dashboard.jobs import JobStore
 from dashboard.routes import (
+    admin_stats,
     chat_runs,
     documents,
     health,
@@ -76,6 +79,7 @@ def create_app(
     chat_conversation_use_case: ChatConversationUseCase | None = None,
     database_session_factory: sessionmaker[Session] | None = None,
     agent_observability: AgentObservability | None = None,
+    llm_provider_stats_use_case: GetLLMProviderStatsUseCase | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Medic RAG Dashboard", lifespan=_app_lifespan)
     qdrant_index = QdrantIndexService()
@@ -122,6 +126,9 @@ def create_app(
     )
     app.state.current_user_resolver = resolve_current_user
     app.state.searcher_factory = searcher_factory or Searcher
+    app.state.llm_provider_stats_use_case = (
+        llm_provider_stats_use_case or build_llm_provider_stats_use_case()
+    )
     app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
     app.state.frontend_manifest_path = STATIC_DIR / "dist" / "manifest.json"
     pipeline_repository = SqlAlchemyPipelineRunRepository(session_factory)
@@ -167,6 +174,7 @@ def create_app(
     app.include_router(settings.router)
     app.include_router(workspace.router)
     app.include_router(search.router)
+    app.include_router(admin_stats.router)
     app.include_router(backend_router)
     configure_admin(
         app,

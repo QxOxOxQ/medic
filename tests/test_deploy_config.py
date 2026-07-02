@@ -60,6 +60,13 @@ def test_production_compose_requires_database_secrets() -> None:
     assert "POSTGRES_PASSWORD: medic" not in compose
 
 
+def test_production_compose_passes_openrouter_management_key() -> None:
+    compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    management_key_env = SETTINGS["env"]["openrouter_management_api_key"]
+
+    assert f'{management_key_env}: "${{{management_key_env}:-}}"' in compose
+
+
 def test_ci_workflow_configures_qdrant_for_quality_tests() -> None:
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "ci.yml"

@@ -1,11 +1,12 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { AssistantView } from "../features/assistant/AssistantView";
+import { LLMProvidersView } from "../features/admin/LLMProvidersView";
 import { DocumentsView } from "../features/documents/DocumentsView";
 import { OverviewView } from "../features/overview/OverviewView";
 import { PipelineView } from "../features/pipeline/PipelineView";
 import { RetrievalView } from "../features/retrieval/RetrievalView";
-import { Button, IconButton } from "../shared/ui";
+import { Button, ErrorState, IconButton } from "../shared/ui";
 import { navigate, type Route, useRoute } from "./router";
 import styles from "./app.module.css";
 
@@ -15,6 +16,7 @@ const labels: Record<Route, string> = {
   pipeline: "Pipeline",
   assistant: "Medical assistant",
   retrieval: "Retrieval inspector",
+  "llm-providers": "LLM providers",
 };
 
 const icons: Record<Route, string> = {
@@ -23,7 +25,16 @@ const icons: Record<Route, string> = {
   pipeline: "↻",
   assistant: "✦",
   retrieval: "⌕",
+  "llm-providers": "$",
 };
+
+const primaryRoutes: Route[] = [
+  "overview",
+  "documents",
+  "pipeline",
+  "assistant",
+  "retrieval",
+];
 
 interface AppProps {
   username: string;
@@ -70,6 +81,9 @@ export function App({ username, isAdmin }: AppProps): JSX.Element {
     navigate(next === "overview" ? "/" : `/${next}`);
     setMenuOpen(false);
   };
+  const routes = isAdmin
+    ? [...primaryRoutes, "llm-providers" as Route]
+    : primaryRoutes;
 
   return (
     <div class={styles.shell}>
@@ -93,7 +107,7 @@ export function App({ username, isAdmin }: AppProps): JSX.Element {
           </div>
         </div>
         <nav class={styles.nav} aria-label="Primary navigation">
-          {(Object.keys(labels) as Route[]).map((item) => (
+          {routes.map((item) => (
             <button
               type="button"
               key={item}
@@ -150,13 +164,13 @@ export function App({ username, isAdmin }: AppProps): JSX.Element {
           <h1 class={styles.title}>{labels[route]}</h1>
           <span class={styles.health}>Live operational workspace</span>
         </header>
-        <div class={styles.content}>{view(route)}</div>
+        <div class={styles.content}>{view(route, isAdmin)}</div>
       </main>
     </div>
   );
 }
 
-function view(route: Route): JSX.Element {
+function view(route: Route, isAdmin: boolean): JSX.Element {
   switch (route) {
     case "documents":
       return <DocumentsView />;
@@ -166,6 +180,15 @@ function view(route: Route): JSX.Element {
       return <AssistantView />;
     case "retrieval":
       return <RetrievalView />;
+    case "llm-providers":
+      return isAdmin ? (
+        <LLMProvidersView />
+      ) : (
+        <ErrorState
+          title="Admin access required"
+          message="This page is restricted."
+        />
+      );
     default:
       return <OverviewView />;
   }

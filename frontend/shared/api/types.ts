@@ -18,6 +18,8 @@ export type SearchResult = components["schemas"]["SearchResultDto"];
 export type WorkspaceOverview =
   components["schemas"]["WorkspaceOverviewResponse"];
 export type Chunk = components["schemas"]["ChunkDto"];
+export type LLMProviderStats =
+  components["schemas"]["LLMProviderStatsResponse"];
 
 export interface ChatModelOption {
   key: string;
